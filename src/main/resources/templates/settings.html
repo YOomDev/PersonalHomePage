@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="https://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Settings - Personal Homepage</title>
+    <link rel="icon" type="image/x-icon" th:href="@{/favicon.ico}">
+    <link rel="stylesheet" th:href="@{/css/main.css}">
+</head>
+<body>
+    <header class="header">
+        <h1>Settings</h1>
+        <div class="user-info">
+            <span id="username-display">Guest</span>
+            <a href="/" class="btn btn-secondary">Back to Home</a>
+            <button class="btn btn-secondary" onclick="logout()">Logout</button>
+        </div>
+    </header>
+
+    <div class="container">
+        <div class="section">
+            <div class="section-header">
+                <h2>Appearance</h2>
+            </div>
+            <div class="section-content">
+                <div class="form-group">
+                    <label for="theme-select">Theme</label>
+                    <select id="theme-select">
+                        <option value="light">Light</option>
+                        <option value="dark">Dark</option>
+                        <option value="auto">Auto (System)</option>
+                    </select>
+                </div>
+                <p class="text-muted" style="font-size: 0.8125rem; margin-top: 0.5rem;">Theme changes apply immediately and are saved to your account.</p>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-header">
+                <h2>Your Modules</h2>
+                <button class="btn btn-primary" onclick="openAddModuleModal()">Add Module</button>
+            </div>
+            <div class="section-content">
+                <div id="module-list" class="module-list"></div>
+                <div id="empty-modules" class="empty-state" style="display: none;">
+                    <h3>No modules yet</h3>
+                    <p>Click "Add Module" to get started</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-header">
+                <h2>Available Module Types</h2>
+            </div>
+            <div class="section-content">
+                <div class="module-list" id="available-modules">
+                    <div class="module-item">
+                        <div class="module-info">
+                            <span class="module-type">WEATHER</span>
+                            <span class="module-config">Shows weather for a location. Config: location, units (metric/imperial), apiKey (optional), refreshInterval</span>
+                        </div>
+                    </div>
+                    <div class="module-item">
+                        <div class="module-info">
+                            <span class="module-type">OLLAMA</span>
+                            <span class="module-config">Chat with local LLM via Ollama. Config: baseUrl, model, systemPrompt, temperature, maxTokens, timeout</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="module-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 class="modal-title" id="modal-title">Add Module</h3>
+                <button class="btn-close" onclick="closeModuleModal()">&times;</button>
+            </div>
+            <form id="module-form">
+                <input type="hidden" id="module-id" name="id">
+                <div class="form-group">
+                    <label for="module-type">Module Type</label>
+                    <select id="module-type" name="type" required>
+                        <option value="WEATHER">Weather</option>
+                        <option value="OLLAMA">Private AI Chat</option>
+                    </select>
+                </div>
+                <div class="form-group" id="weather-config-group">
+                    <label for="module-config">Configuration (JSON)</label>
+                    <textarea id="module-config" name="config" rows="6" placeholder='{"location": "Amsterdam", "units": "metric"}'></textarea>
+                </div>
+                <div class="form-group" id="ollama-config-group" style="display: none;">
+                    <label for="ollama-model">Model</label>
+                    <select id="ollama-model" name="ollamaModel">
+                        <option value="">Loading models...</option>
+                    </select>
+                    <p class="text-muted" style="font-size: 0.8125rem; margin-top: 0.5rem;">Uses server URL from application.yml. JSON config optional.</p>
+                </div>
+                <div class="form-group" id="ollama-advanced-group" style="display: none;">
+                    <label for="module-config">Advanced Config (JSON, optional)</label>
+                    <textarea id="module-config" name="config" rows="6" placeholder='{"systemPrompt": "You are a helpful assistant.", "temperature": 0.7, "maxTokens": 2000, "timeout": 30000}'></textarea>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="module-enabled">Enabled</label>
+                        <select id="module-enabled" name="enabled">
+                            <option value="true">Yes</option>
+                            <option value="false">No</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="module-order">Display Order</label>
+                        <input type="number" id="module-order" name="displayOrder" value="0" min="0">
+                    </div>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeModuleModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '/api';
+        let authToken = localStorage.getItem('authToken');
+        let editingModuleId = null;
+        let defaultModel = null;
+
+        // Apply theme immediately on page load
+        function applyTheme(theme) {
+            const root = document.documentElement;
+            if (theme === 'auto' || !theme) {
+                root.removeAttribute('data-theme');
+            } else {
+                root.setAttribute('data-theme', theme);
+            }
+        }
+
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme) {
+            applyTheme(savedTheme);
+        }
+
+        async function fetchModules() {
+            if (!authToken) return [];
+            try {
+                const response = await fetch(`${API_BASE}/modules`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                if (!response.ok) throw new Error('Failed to fetch modules');
+                return await response.json();
+            } catch (e) {
+                console.error('Error loading modules:', e);
+                return [];
+            }
+        }
+
+        function renderModuleList(modules) {
+            const list = document.getElementById('module-list');
+            const empty = document.getElementById('empty-modules');
+            
+            if (modules.length === 0) {
+                list.innerHTML = '';
+                empty.style.display = 'block';
+                return;
+            }
+            
+            empty.style.display = 'none';
+            list.innerHTML = modules.map(module => `
+                <div class="module-item">
+                    <div class="module-info">
+                        <span class="module-type">${module.type}</span>
+                        <span class="module-config">${JSON.stringify(module.config)}</span>
+                    </div>
+                    <div class="module-actions">
+                        <button class="btn btn-secondary btn-sm" onclick='editModule(${JSON.stringify(module)})'>Edit</button>
+                        <button class="btn btn-danger btn-sm" onclick="deleteModule(${module.id})">Delete</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function loadModules() {
+            const modules = await fetchModules();
+            renderModuleList(modules);
+        }
+
+        function openAddModuleModal() {
+            editingModuleId = null;
+            document.getElementById('modal-title').textContent = 'Add Module';
+            document.getElementById('module-form').reset();
+            document.getElementById('module-id').value = '';
+            document.getElementById('module-type').value = 'WEATHER';
+            showConfigForType('WEATHER');
+            document.getElementById('module-modal').classList.add('show');
+        }
+
+        function editModule(module) {
+            editingModuleId = module.id;
+            document.getElementById('modal-title').textContent = 'Edit Module';
+            document.getElementById('module-id').value = module.id;
+            document.getElementById('module-type').value = module.type;
+            
+            // Show appropriate config UI
+            showConfigForType(module.type);
+            
+            if (module.type === 'OLLAMA') {
+                // Load models first, then set selected
+                loadOllamaModels().then(() => {
+                    const modelSelect = document.getElementById('ollama-model');
+                    const savedModel = module.config?.model || '';
+                    if (savedModel) {
+                        modelSelect.value = savedModel;
+                    }
+                    // Put advanced config in textarea if exists
+                    const advancedConfig = { ...module.config };
+                    delete advancedConfig.model;
+                    delete advancedConfig.baseUrl;
+                    if (Object.keys(advancedConfig).length > 0) {
+                        document.getElementById('module-config').value = JSON.stringify(advancedConfig, null, 2);
+                    }
+                });
+            } else {
+                document.getElementById('module-config').value = JSON.stringify(module.config, null, 2);
+            }
+            
+            document.getElementById('module-enabled').value = module.enabled;
+            document.getElementById('module-order').value = module.displayOrder;
+            document.getElementById('module-modal').classList.add('show');
+        }
+
+        function closeModuleModal() {
+            document.getElementById('module-modal').classList.remove('show');
+            editingModuleId = null;
+        }
+
+        function showConfigForType(type) {
+            const weatherGroup = document.getElementById('weather-config-group');
+            const ollamaGroup = document.getElementById('ollama-config-group');
+            const ollamaAdvancedGroup = document.getElementById('ollama-advanced-group');
+            
+            if (type === 'OLLAMA') {
+                weatherGroup.style.display = 'none';
+                ollamaGroup.style.display = 'block';
+                ollamaAdvancedGroup.style.display = 'block';
+                loadOllamaModels();
+            } else {
+                weatherGroup.style.display = 'block';
+                ollamaGroup.style.display = 'none';
+                ollamaAdvancedGroup.style.display = 'none';
+            }
+        }
+
+        async function loadOllamaModels() {
+            const select = document.getElementById('ollama-model');
+            
+            // Store default model on the select element itself
+            if (select.dataset.defaultModel) {
+                select.value = select.dataset.defaultModel;
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE}/auth/ollama/models`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    const models = data.models || [];
+                    const defaultModel = data.defaultModel || '';
+                    select.innerHTML = models.map(m => `<option value="${m}">${m}</option>`).join('');
+                    // Pre-select default model from application.yml
+                    if (defaultModel && models.includes(defaultModel)) {
+                        select.value = defaultModel;
+                        select.dataset.defaultModel = defaultModel; // Cache for subsequent opens
+                    }
+                } else {
+                    select.innerHTML = '<option value="">Failed to load models</option>';
+                }
+            } catch (e) {
+                console.error('Failed to load Ollama models:', e);
+                select.innerHTML = '<option value="">Error loading models</option>';
+            }
+        }
+
+        document.getElementById('module-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const type = document.getElementById('module-type').value;
+            let config;
+            
+            if (type === 'OLLAMA') {
+                const model = document.getElementById('ollama-model').value;
+                if (!model) {
+                    alert('Please select a model');
+                    return;
+                }
+                config = { model };
+                
+                // Parse advanced config if provided
+                const advancedConfigText = document.getElementById('module-config').value.trim();
+                if (advancedConfigText) {
+                    try {
+                        const advanced = JSON.parse(advancedConfigText);
+                        Object.assign(config, advanced);
+                    } catch (e) {
+                        alert('Invalid JSON in advanced config');
+                        return;
+                    }
+                }
+            } else {
+                try {
+                    config = JSON.parse(document.getElementById('module-config').value);
+                } catch (e) {
+                    alert('Invalid JSON configuration');
+                    return;
+                }
+            }
+            
+            const enabled = document.getElementById('module-enabled').value === 'true';
+            const displayOrder = parseInt(document.getElementById('module-order').value) || 0;
+
+            const dto = { type, config, enabled, displayOrder };
+            const id = document.getElementById('module-id').value;
+
+            try {
+                const url = id ? `${API_BASE}/modules/${id}` : `${API_BASE}/modules`;
+                const method = id ? 'PUT' : 'POST';
+                
+                const response = await fetch(url, {
+                    method,
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify(dto)
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.message || 'Failed to save module');
+                }
+
+                closeModuleModal();
+                await loadModules();
+            } catch (err) {
+                alert(err.message);
+            }
+        });
+
+        async function deleteModule(id) {
+            if (!confirm('Are you sure you want to delete this module?')) return;
+            
+            try {
+                const response = await fetch(`${API_BASE}/modules/${id}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                
+                if (!response.ok) throw new Error('Failed to delete module');
+                await loadModules();
+            } catch (err) {
+                alert(err.message);
+            }
+        }
+
+        function logout() {
+            localStorage.removeItem('authToken');
+            localStorage.removeItem('refreshToken');
+            window.location.href = '/login';
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            if (!authToken) {
+                window.location.href = '/login';
+                return;
+            }
+            
+            // Type change handler
+            document.getElementById('module-type').addEventListener('change', (e) => {
+                showConfigForType(e.target.value);
+            });
+            
+            loadUserInfo();
+            loadModules();
+        });
+
+        async function loadUserInfo() {
+            try {
+                const response = await fetch(`${API_BASE}/auth/me`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                if (response.ok) {
+                    const userInfo = await response.json();
+                    document.getElementById('username-display').textContent = userInfo.username;
+                    // Sync dropdown to current effective theme (from server or localStorage)
+                    const effectiveTheme = userInfo.theme || localStorage.getItem('theme') || 'light';
+                    document.getElementById('theme-select').value = effectiveTheme;
+                }
+            } catch (e) {
+                console.error('Failed to load user info:', e);
+            }
+        }
+
+        document.getElementById('theme-select').addEventListener('change', async (e) => {
+            const theme = e.target.value;
+            console.log("Theme updated to: " + theme)
+            await updateTheme(theme);
+            applyTheme(theme);
+        });
+
+        async function updateTheme(theme) {
+            try {
+                const response = await fetch(`${API_BASE}/auth/preferences`, {
+                    method: 'PUT',
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${authToken}`
+                    },
+                    body: JSON.stringify({ theme })
+                });
+                if (!response.ok) throw new Error('Failed to update theme');
+            } catch (err) {
+                console.error('Failed to update theme:', err);
+            }
+        }
+
+        function applyTheme(theme) {
+            const root = document.documentElement;
+            if (theme === 'auto') {
+                root.removeAttribute('data-theme');
+            } else {
+                root.setAttribute('data-theme', theme);
+            }
+            localStorage.setItem('theme', theme);
+        }
+    </script>
+</body>
+</html>

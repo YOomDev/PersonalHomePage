@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="https://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Personal Homepage</title>
+    <link rel="icon" type="image/x-icon" th:href="@{/favicon.ico}">
+    <link rel="stylesheet" th:href="@{/css/main.css}">
+</head>
+<body>
+    <header class="header">
+        <h1>Personal Homepage</h1>
+        <div class="user-info">
+            <span id="username-display">Guest</span>
+            <a href="/settings" class="btn btn-secondary">Settings</a>
+            <button class="btn btn-secondary" onclick="logout()">Logout</button>
+        </div>
+    </header>
+
+    <div class="container">
+        <div id="modules-grid" class="grid"></div>
+        
+        <div id="empty-state" class="empty-state" style="display: none;">
+            <h3>No modules configured</h3>
+            <p>Add modules from the settings page</p>
+        </div>
+    </div>
+
+    <div id="offline-indicator" class="offline-indicator">
+        Offline mode - showing cached data
+    </div>
+
+    <script>
+        const API_BASE = '/api';
+        const CACHE_KEY = 'homepage_modules_cache';
+        const CACHE_EXPIRY = 5 * 60 * 1000; // 5 minutes
+        
+        let authToken = localStorage.getItem('authToken');
+        let isOnline = true;
+        let retryCount = 0;
+        const MAX_RETRIES = 3;
+
+        // Apply theme immediately on page load (from localStorage)
+        function applyTheme(theme) {
+            const root = document.documentElement;
+            if (theme === 'auto' || !theme) {
+                root.removeAttribute('data-theme');
+            } else {
+                root.setAttribute('data-theme', theme);
+            }
+        }
+
+        // Load saved theme from localStorage
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme) {
+            applyTheme(savedTheme);
+        }
+
+        function showOfflineIndicator(show) {
+            const indicator = document.getElementById('offline-indicator');
+            if (show) indicator.classList.add('show');
+            else indicator.classList.remove('show');
+        }
+
+        function getCachedModules() {
+            try {
+                const cached = localStorage.getItem(CACHE_KEY);
+                if (!cached) return null;
+                const { data, timestamp } = JSON.parse(cached);
+                if (Date.now() - timestamp > CACHE_EXPIRY) return null;
+                return data;
+            } catch {
+                return null;
+            }
+        }
+
+        function setCachedModules(modules) {
+            try {
+                localStorage.setItem(CACHE_KEY, JSON.stringify({
+                    data: modules,
+                    timestamp: Date.now()
+                }));
+            } catch (e) {
+                console.warn('Failed to cache modules:', e);
+            }
+        }
+
+        async function fetchModules() {
+            if (!authToken) return { modules: [], fromCache: false, error: null };
+
+            try {
+                const response = await fetch(`${API_BASE}/modules`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` },
+                    signal: AbortSignal.timeout(5000)
+                });
+                
+                if (!response.ok) {
+                    if (response.status === 401) {
+                        await refreshToken();
+                        return fetchModules();
+                    }
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const modules = await response.json();
+                isOnline = true;
+                showOfflineIndicator(false);
+                retryCount = 0;
+                setCachedModules(modules);
+                return { modules, fromCache: false, error: null };
+                
+            } catch (e) {
+                console.error('Error loading modules:', e);
+                isOnline = false;
+                
+                const cached = getCachedModules();
+                if (cached && cached.length > 0) {
+                    showOfflineIndicator(true);
+                    return { modules: cached, fromCache: true, error: e.message };
+                }
+                
+                return { modules: [], fromCache: false, error: e.message };
+            }
+        }
+
+        async function refreshToken() {
+            const refreshToken = localStorage.getItem('refreshToken');
+            if (!refreshToken) throw new Error('No refresh token');
+            
+            try {
+                const response = await fetch(`${API_BASE}/auth/refresh`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ refreshToken })
+                });
+                
+                if (!response.ok) throw new Error('Refresh failed');
+                
+                const data = await response.json();
+                localStorage.setItem('authToken', data.accessToken);
+                localStorage.setItem('refreshToken', data.refreshToken);
+                authToken = data.accessToken;
+            } catch (e) {
+                localStorage.removeItem('authToken');
+                localStorage.removeItem('refreshToken');
+                throw e;
+            }
+        }
+
+        function createConnectionErrorModule(errorMessage) {
+            return {
+                id: 'connection-error',
+                type: 'SYSTEM',
+                config: { error: errorMessage },
+                enabled: true,
+                displayOrder: -1
+            };
+        }
+
+        function renderModule(module) {
+            const card = document.createElement('div');
+            
+            if (module.id === 'connection-error') {
+                card.className = 'module-card connection-error';
+                card.innerHTML = `
+                    <div class="module-header">
+                        <h3>⚠ Connection Error</h3>
+                        <span class="module-badge">Offline</span>
+                    </div>
+                    <div class="module-content">
+                        <div class="connection-error-icon">📡</div>
+                        <div class="connection-error-title">Unable to connect to server</div>
+                        <div class="connection-error-message">
+                            ${isOnline ? 'The server is unreachable. Showing cached data.' : 'You appear to be offline.'}
+                        </div>
+                        <div class="connection-error-details">
+                            ${module.config.error || 'Unknown error'}
+                        </div>
+                        <button class="btn btn-primary retry-btn" onclick="retryConnection()">Retry Connection</button>
+                    </div>
+                `;
+            } else {
+                card.className = 'module-card';
+                card.innerHTML = `
+                    <div class="module-header">
+                        <h3>${module.type}</h3>
+                        <span class="module-badge">${module.displayOrder !== undefined ? 'Order: ' + module.displayOrder : ''}</span>
+                    </div>
+                    <div id="module-${module.id}" class="module-content">
+                        <div class="module-loading">Loading ${module.type}...</div>
+                    </div>
+                `;
+            }
+            return card;
+        }
+
+        async function loadModuleScript(module) {
+            if (module.id === 'connection-error') return;
+            
+            const moduleType = module.type.toUpperCase();
+            const container = document.getElementById(`module-${module.id}`);
+            if (!container) {
+                console.error(`Container not found for module-${module.id}`);
+                return;
+            }
+            
+            try {
+                console.log(`Initializing module: ${moduleType}`);
+                
+                if (moduleType === 'WEATHER' && window.WeatherModule) {
+                    window.WeatherModule(module.config || {}, container);
+                } else if (moduleType === 'OLLAMA' && window.OllamaModule) {
+                    window.OllamaModule(module.config || {}, container);
+                } else {
+                    throw new Error(`Module ${moduleType} not loaded`);
+                }
+                
+                console.log(`Module ${moduleType} initialized`);
+            } catch (e) {
+                console.error(`Error loading module ${moduleType}:`, e);
+                container.innerHTML = `<div class="module-loading">Error loading ${moduleType} module: ${e.message}</div>`;
+            }
+        }
+
+        async function init() {
+            await loadUserInfo();
+            await loadModuleScripts();
+            const grid = document.getElementById('modules-grid');
+            const emptyState = document.getElementById('empty-state');
+            
+            const result = await fetchModules();
+            let modules = result.modules;
+            
+            if (result.error && modules.length === 0) {
+                modules = [createConnectionErrorModule(result.error)];
+            }
+            
+            if (modules.length === 0) {
+                emptyState.style.display = 'block';
+                return;
+            }
+
+            emptyState.style.display = 'none';
+            
+            modules.sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0));
+            
+            for (const module of modules) {
+                if (!module.enabled) continue;
+                const card = renderModule(module);
+                grid.appendChild(card);
+                await loadModuleScript(module);
+            }
+        }
+
+        async function retryConnection() {
+            const grid = document.getElementById('modules-grid');
+            const emptyState = document.getElementById('empty-state');
+            
+            if (retryCount >= MAX_RETRIES) {
+                alert('Max retries reached. Please check your connection and refresh the page.');
+                return;
+            }
+            
+            retryCount++;
+            grid.innerHTML = '';
+            emptyState.style.display = 'none';
+            
+            const loadingCard = document.createElement('div');
+            loadingCard.className = 'module-card connection-error';
+            loadingCard.innerHTML = `
+                <div class="module-header">
+                    <h3>⚠ Connection Error</h3>
+                    <span class="module-badge">Retrying... (${retryCount}/${MAX_RETRIES})</span>
+                </div>
+                <div class="module-content">
+                    <div class="connection-error-icon">🔄</div>
+                    <div class="connection-error-title">Retrying connection...</div>
+                    <div class="connection-error-message">Attempt ${retryCount} of ${MAX_RETRIES}</div>
+                </div>
+            `;
+            grid.appendChild(loadingCard);
+            
+            const result = await fetchModules();
+            let modules = result.modules;
+            
+            if (result.error && modules.length === 0) {
+                modules = [createConnectionErrorModule(result.error)];
+            }
+            
+            grid.innerHTML = '';
+            
+            if (modules.length === 0) {
+                emptyState.style.display = 'block';
+                return;
+            }
+            
+            emptyState.style.display = 'none';
+            modules.sort((a, b) => (a.displayOrder || 0) - (b.displayOrder || 0));
+            
+            for (const module of modules) {
+                if (!module.enabled) continue;
+                const card = renderModule(module);
+                grid.appendChild(card);
+                await loadModuleScript(module);
+            }
+        }
+
+        async function loadModuleScripts() {
+            const scripts = ['weather', 'ollama'];
+            for (const name of scripts) {
+                try {
+                    const response = await fetch(`/modules/${name}.js`);
+                    if (!response.ok) throw new Error(`${response.status}`);
+                    const scriptContent = await response.text();
+                    const script = document.createElement('script');
+                    script.textContent = scriptContent;
+                    document.head.appendChild(script);
+                    console.log(`Loaded module script: ${name}.js`);
+                } catch (e) {
+                    console.error(`Failed to load ${name}.js:`, e);
+                }
+            }
+        }
+
+        async function loadUserInfo() {
+            if (!authToken) return;
+            try {
+                const response = await fetch(`${API_BASE}/auth/me`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                if (response.ok) {
+                    const userInfo = await response.json();
+                    document.getElementById('username-display').textContent = userInfo.username;
+                    // Apply theme from server
+                    if (userInfo.theme) {
+                        applyTheme(userInfo.theme);
+                        localStorage.setItem('theme', userInfo.theme);
+                    }
+                }
+            } catch (e) {
+                console.error('Failed to load user info:', e);
+            }
+        }
+
+        function logout() {
+            localStorage.removeItem('authToken');
+            localStorage.removeItem('refreshToken');
+            localStorage.removeItem(CACHE_KEY);
+            window.location.href = '/login';
+        }
+
+        setInterval(async () => {
+            if (!isOnline && authToken) {
+                const result = await fetchModules();
+                if (!result.error) {
+                    window.location.reload();
+                }
+            }
+        }, 30000);
+
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>
