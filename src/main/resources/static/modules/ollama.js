@@ -5,6 +5,7 @@ function OllamaModule(config, container) {
     const systemPrompt = config.systemPrompt || 'You are a helpful assistant.';
     const temperature = config.temperature || 0.7;
     const maxTokens = config.maxTokens || 2000;
+    const streamDefault = config.stream === true;
 
     const styles = `
         .ollama-module { padding: 0.5rem; display: flex; flex-direction: column; height: 100%; min-height: 300px; }
@@ -25,6 +26,8 @@ function OllamaModule(config, container) {
         .ollama-loading { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--border-color); border-top-color: var(--primary-color); border-radius: 50%; animation: spin 0.8s linear infinite; margin-right: 0.5rem; vertical-align: middle; }
         @keyframes spin { to { transform: rotate(360deg); } }
         .ollama-empty { text-align: center; color: var(--text-muted); padding: 2rem; font-size: 0.875rem; }
+        .ollama-stream-toggle { display: inline-flex; align-items: center; gap: 0.25rem; margin-right: auto; font-size: 0.8125rem; color: var(--text-secondary); cursor: pointer; user-select: none; }
+        .ollama-stream-toggle input { cursor: pointer; }
     `;
 
     container.innerHTML = `
@@ -38,6 +41,9 @@ function OllamaModule(config, container) {
             <div class="ollama-input-area">
                 <textarea id="ollama-input" placeholder="Ask something..." rows="2"></textarea>
                 <div class="ollama-controls">
+                    <label class="ollama-stream-toggle" title="Show text as it is generated">
+                        <input type="checkbox" id="ollama-stream-toggle"${streamDefault ? ' checked' : ''}>Stream
+                    </label>
                     <button id="ollama-send" class="btn btn-primary btn-sm">Send</button>
                     <button id="ollama-clear" class="btn btn-secondary btn-sm">Clear</button>
                 </div>
@@ -100,8 +106,10 @@ function OllamaModule(config, container) {
         addMessage('user', text);
         input.value = '';
         input.style.height = 'auto';
-        
+
+        const streaming = container.querySelector('#ollama-stream-toggle').checked;
         const assistantMsg = addMessageRaw('assistant', '<span class="ollama-loading"></span>Thinking...');
+        const contentDiv = assistantMsg.querySelector('div');
         setLoading(true);
 
         try {
@@ -114,7 +122,7 @@ function OllamaModule(config, container) {
                         { role: 'system', content: systemPrompt },
                         { role: 'user', content: text }
                     ],
-                    stream: false,
+                    stream: streaming,
                     options: {
                         temperature: temperature,
                         num_predict: maxTokens
@@ -128,21 +136,62 @@ function OllamaModule(config, container) {
                 throw new Error(error.error || ('HTTP ' + response.status));
             }
 
-            const data = await response.json();
-            const content = data.message && data.message.content ? data.message.content : 'No response';
-            
             var meta = '';
-            if (data.eval_count) meta += data.eval_count + ' tokens';
-            if (data.eval_duration) meta += ' in ' + (data.eval_duration / 1e9).toFixed(1) + 's';
-            
-            assistantMsg.innerHTML = '<div>' + escapeHtml(content) + '</div><div class="meta">Assistant \u00b7 ' + formatTime() + (meta ? ' \u00b7 ' + meta : '') + '</div>';
+
+            if (streaming) {
+                let content = '';
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    buffer += decoder.decode(value, { stream: true });
+
+                    let nl;
+                    while ((nl = buffer.indexOf('\n')) !== -1) {
+                        const line = buffer.slice(0, nl).trim();
+                        buffer = buffer.slice(nl + 1);
+                        if (!line) continue;
+
+                        let chunk;
+                        try {
+                            chunk = JSON.parse(line);
+                        } catch (err) {
+                            continue;
+                        }
+
+                        if (chunk.message && chunk.message.content) {
+                            content += chunk.message.content;
+                            contentDiv.innerHTML = escapeHtml(content);
+                            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                        }
+
+                        if (chunk.done) {
+                            if (chunk.eval_count) meta += chunk.eval_count + ' tokens';
+                            if (chunk.eval_duration) meta += (meta ? ' ' : '') + 'in ' + (chunk.eval_duration / 1e9).toFixed(1) + 's';
+                        }
+                    }
+                }
+
+                assistantMsg.innerHTML = '<div>' + escapeHtml(content) + '</div><div class="meta">Assistant \u00b7 ' + formatTime() + (meta ? ' \u00b7 ' + meta : '') + '</div>';
+            } else {
+                const data = await response.json();
+                const content = data.message && data.message.content ? data.message.content : 'No response';
+
+                if (data.eval_count) meta += data.eval_count + ' tokens';
+                if (data.eval_duration) meta += ' in ' + (data.eval_duration / 1e9).toFixed(1) + 's';
+
+                assistantMsg.innerHTML = '<div>' + escapeHtml(content) + '</div><div class="meta">Assistant \u00b7 ' + formatTime() + (meta ? ' \u00b7 ' + meta : '') + '</div>';
+            }
             messagesContainer.scrollTop = messagesContainer.scrollHeight;
 
         } catch (e) {
             console.error('Ollama error:', e);
             var errorMsg = e.name === 'AbortError' ? 'Request timed out' : (e.message || 'Failed to get response');
             assistantMsg.className = 'ollama-message error';
-            assistantMsg.innerHTML = '<div>Error: ' + escapeHtml(errorMsg) + '</div><div class="meta">Error \u00b7 ' + formatTime() + '</div>';
+            assistantMsg.innerHTML = '<div>' + escapeHtml(errorMsg) + '</div><div class="meta">Error \u00b7 ' + formatTime() + '</div>';
         } finally {
             setLoading(false);
         }

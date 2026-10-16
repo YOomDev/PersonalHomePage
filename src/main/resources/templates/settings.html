@@ -96,6 +96,10 @@
                     <select id="ollama-model" name="ollamaModel">
                         <option value="">Loading models...</option>
                     </select>
+                    <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; margin-top: 0.5rem;">
+                        <input type="checkbox" id="ollama-stream" name="ollamaStream">
+                        Stream responses (show text as it is generated)
+                    </label>
                     <p class="text-muted" style="font-size: 0.8125rem; margin-top: 0.5rem;">Uses server URL from application.yml. JSON config optional.</p>
                 </div>
                 <div class="form-group" id="ollama-advanced-group" style="display: none;">
@@ -215,9 +219,11 @@
                     if (savedModel) {
                         modelSelect.value = savedModel;
                     }
+                    document.getElementById('ollama-stream').checked = module.config?.stream === true;
                     // Put advanced config in textarea if exists
                     const advancedConfig = { ...module.config };
                     delete advancedConfig.model;
+                    delete advancedConfig.stream;
                     delete advancedConfig.baseUrl;
                     if (Object.keys(advancedConfig).length > 0) {
                         document.getElementById('module-config').value = JSON.stringify(advancedConfig, null, 2);
@@ -298,7 +304,10 @@
                     alert('Please select a model');
                     return;
                 }
-                config = { model };
+                config = {
+                    model,
+                    stream: document.getElementById('ollama-stream').checked
+                };
                 
                 // Parse advanced config if provided
                 const advancedConfigText = document.getElementById('module-config').value.trim();
