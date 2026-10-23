@@ -654,6 +654,12 @@
         loadUserInfo();
         loadEvents();
         loadSharing();
+
+        document.addEventListener('click', (e) => {
+            document.querySelectorAll('details.site-menu[open]').forEach(menu => {
+                if (!menu.contains(e.target)) menu.removeAttribute('open');
+            });
+        });
     </script>
 </body>
 </html>
