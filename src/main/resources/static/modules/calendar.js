@@ -312,8 +312,7 @@ function CalendarModule(config, container, moduleRef) {
             }
 
             closeModal();
-            await loadEvents();
-            render();
+            document.dispatchEvent(new CustomEvent('calendar:updated'));
         } catch (e) {
             errorEl.textContent = e.message;
         }
@@ -331,8 +330,7 @@ function CalendarModule(config, container, moduleRef) {
                 throw new Error(data.message || `HTTP ${response.status}`);
             }
             closeModal();
-            await loadEvents();
-            render();
+            document.dispatchEvent(new CustomEvent('calendar:updated'));
         } catch (e) {
             errorEl.textContent = e.message;
         }
@@ -367,6 +365,9 @@ function CalendarModule(config, container, moduleRef) {
     overlay.addEventListener('click', (e) => {
         if (e.target === overlay) closeModal();
     });
+
+    // Keep every calendar module on this page in sync after data changes
+    document.addEventListener('calendar:updated', () => loadEvents());
 
     loadEvents();
 }
