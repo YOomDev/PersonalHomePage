@@ -180,6 +180,18 @@ a:hover { text-decoration: underline; }
 .header h1 { font-size: 1.5rem; color: var(--text-primary); font-weight: 600; }
 .user-info { display: flex; align-items: center; gap: 1rem; color: var(--text-secondary); font-size: 0.9375rem; }
 
+/* Site title dropdown */
+.site-menu { position: relative; }
+.site-menu summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 0.4rem; user-select: none; width: max-content; padding: 0.25rem 0.5rem; margin: -0.25rem -0.5rem; border-radius: var(--radius); transition: background var(--transition); }
+.site-menu summary::-webkit-details-marker { display: none; }
+.site-menu summary:hover { background: var(--bg-hover); }
+.site-menu-caret { font-size: 0.8rem; color: var(--text-secondary); transition: transform var(--transition); }
+.site-menu[open] .site-menu-caret { transform: rotate(180deg); }
+.site-menu-list { position: absolute; top: calc(100% + 0.5rem); left: 0; min-width: 10rem; background: var(--header-bg); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 0.35rem; display: flex; flex-direction: column; gap: 0.15rem; box-shadow: var(--shadow-lg); z-index: 200; }
+.site-menu-list a { padding: 0.45rem 0.6rem; border-radius: var(--radius); color: var(--text-primary); text-decoration: none; font-size: 0.9rem; transition: background var(--transition); }
+.site-menu-list a:hover { background: var(--bg-hover); }
+.site-menu-list a.active { color: var(--primary-color); font-weight: 600; }
+
 /* Buttons */
 .btn { 
     padding: 0.5rem 1rem; 
