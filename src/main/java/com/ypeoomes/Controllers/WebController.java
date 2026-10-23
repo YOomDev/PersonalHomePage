@@ -30,4 +30,10 @@ public class WebController {
         model.addAttribute("user", user);
         return "settings";
     }
+
+    @GetMapping("/calendar")
+    public String calendar(@AuthenticationPrincipal User user, Model model) {
+        model.addAttribute("user", user);
+        return "calendar";
+    }
 }

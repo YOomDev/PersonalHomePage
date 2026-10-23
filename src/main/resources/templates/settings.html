@@ -13,6 +13,7 @@
         <div class="user-info">
             <span id="username-display">Guest</span>
             <a href="/" class="btn btn-secondary">Back to Home</a>
+            <a href="/calendar" class="btn btn-secondary">Calendar</a>
             <button class="btn btn-secondary" onclick="logout()">Logout</button>
         </div>
     </header>
@@ -67,6 +68,12 @@
                             <span class="module-config">Chat with local LLM via Ollama. Config: baseUrl, model, systemPrompt, temperature, maxTokens, timeout</span>
                         </div>
                     </div>
+                    <div class="module-item">
+                        <div class="module-info">
+                            <span class="module-type">CALENDAR</span>
+                            <span class="module-config">Month grid showing your events. No config needed. Manage events here or on the dedicated Calendar page.</span>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -85,6 +92,7 @@
                     <select id="module-type" name="type" required>
                         <option value="WEATHER">Weather</option>
                         <option value="OLLAMA">Private AI Chat</option>
+                        <option value="CALENDAR">Calendar</option>
                     </select>
                 </div>
                 <div class="form-group" id="weather-config-group">
@@ -253,8 +261,12 @@
                 ollamaGroup.style.display = 'block';
                 ollamaAdvancedGroup.style.display = 'block';
                 loadOllamaModels();
-            } else {
+            } else if (type === 'WEATHER') {
                 weatherGroup.style.display = 'block';
+                ollamaGroup.style.display = 'none';
+                ollamaAdvancedGroup.style.display = 'none';
+            } else {
+                weatherGroup.style.display = 'none';
                 ollamaGroup.style.display = 'none';
                 ollamaAdvancedGroup.style.display = 'none';
             }
@@ -308,7 +320,7 @@
                     model,
                     stream: document.getElementById('ollama-stream').checked
                 };
-                
+
                 // Parse advanced config if provided
                 const advancedConfigText = document.getElementById('module-config').value.trim();
                 if (advancedConfigText) {
@@ -320,6 +332,8 @@
                         return;
                     }
                 }
+            } else if (type === 'CALENDAR') {
+                config = {};
             } else {
                 try {
                     config = JSON.parse(document.getElementById('module-config').value);

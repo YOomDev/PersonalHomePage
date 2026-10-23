@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="https://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calendar - Personal Homepage</title>
+    <link rel="icon" type="image/x-icon" th:href="@{/favicon.ico}">
+    <link rel="stylesheet" th:href="@{/css/main.css}">
+    <style>
+        .calendar-page { display: flex; flex-direction: column; height: calc(100vh - 140px); min-height: 500px; }
+        .cal-toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; gap: 0.75rem; flex-wrap: wrap; }
+        .cal-toolbar h2 { margin: 0; font-size: 1.5rem; color: var(--text-primary); }
+        .cal-toolbar nav { display: flex; gap: 0.5rem; }
+        .cal-filter-select { font-size: 0.9375rem; padding: 0.45rem 0.5rem; border: 1px solid var(--input-border); border-radius: var(--radius); background: var(--input-bg); color: var(--text-primary); }
+        .cal-main { display: flex; gap: 1rem; flex: 1; min-height: 0; }
+        .cal-month { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+        .cal-weekdays { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 4px; }
+        .cal-weekday { text-align: center; font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); padding: 0.25rem 0; }
+        .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); grid-template-rows: repeat(6, 1fr); gap: 4px; flex: 1; }
+        .cal-cell { background: var(--bg-tertiary); border-radius: var(--radius); padding: 0.3rem; overflow-y: auto; cursor: pointer; transition: background 0.15s; }
+        .cal-cell:hover { background: var(--bg-hover); }
+        .cal-cell.is-today { outline: 2px solid var(--primary-color); }
+        .cal-cell.is-empty { background: transparent; cursor: default; }
+        .cal-cell.is-empty:hover { background: transparent; }
+        .cal-day-num { font-size: 0.75rem; color: var(--text-secondary); text-align: right; padding-right: 3px; margin-bottom: 2px; }
+        .cal-cell.is-today .cal-day-num { color: var(--primary-color); font-weight: 700; }
+        .cal-event { font-size: 0.75rem; padding: 2px 6px; border-radius: 4px; background: var(--primary-color); color: var(--text-on-primary); margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+        .cal-event.allday { background: var(--success-color, #27ae60); }
+        .cal-event .cal-ev-time { opacity: 0.75; font-size: 0.65rem; margin-right: 4px; }
+        .cal-event.busy { background: var(--text-muted, #999); opacity: 0.55; cursor: default; }
+        .cal-side { width: 260px; display: flex; flex-direction: column; gap: 1rem; flex-shrink: 0; }
+        .cal-side .section-content { overflow-y: auto; max-height: 70vh; }
+        .cal-upcoming { padding: 0.5rem 0.75rem; border-radius: var(--radius); background: var(--bg-tertiary); margin-bottom: 0.5rem; }
+        .cal-upcoming .date { font-size: 0.7rem; color: var(--text-secondary); }
+        .cal-upcoming .title { font-size: 0.875rem; color: var(--text-primary); margin-top: 0.15rem; cursor: pointer; }
+        .cal-upcoming .title:hover { color: var(--primary-color); }
+        .cal-loading { text-align: center; color: var(--text-muted); padding: 3rem; }
+        @media (max-width: 900px) {
+            .cal-side { display: none; }
+            .calendar-page { height: auto; }
+            .cal-grid { grid-template-rows: auto; min-height: 420px; }
+            .cal-cell { min-height: 70px; }
+        }
+        .cal-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 1000; }
+        .cal-modal-overlay.show { display: flex; }
+        .cal-modal { background: var(--bg-secondary, var(--bg-primary)); border-radius: var(--radius); padding: 1.5rem; width: 90%; max-width: 420px; max-height: 85vh; overflow-y: auto; color: var(--text-primary); }
+        .cal-modal h4 { margin: 0 0 1rem; }
+        .cal-modal label { display: block; font-size: 0.875rem; margin-bottom: 0.25rem; color: var(--text-secondary); }
+        .cal-modal input[type="text"], .cal-modal input[type="datetime-local"], .cal-modal textarea, .cal-modal select { width: 100%; padding: 0.5rem 0.6rem; border: 1px solid var(--input-border); border-radius: var(--radius); background: var(--input-bg); color: var(--text-primary); font-family: inherit; font-size: 0.875rem; box-sizing: border-box; }
+        .cal-modal input:focus, .cal-modal textarea:focus, .cal-modal select:focus { outline: none; border-color: var(--primary-color); }
+        .cal-modal .modal-note { font-size: 0.8125rem; color: var(--text-secondary); margin: -0.5rem 0 0.75rem; }
+        .cal-modal .form-group { margin-bottom: 0.9rem; }
+        .cal-modal .all-day-row { display: flex; align-items: center; gap: 0.5rem; font-size: 0.875rem; color: var(--text-primary); cursor: pointer; user-select: none; }
+        .cal-modal .all-day-row input { width: auto; cursor: pointer; }
+        .cal-modal-actions { display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 1.25rem; }
+        .cal-modal-actions .cal-ev-delete { margin-right: auto; }
+        .cal-error { color: var(--danger-color); font-size: 0.8125rem; margin-top: 0.5rem; min-height: 1em; }
+        .share-rule { display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0.6rem; background: var(--bg-tertiary); border-radius: var(--radius); margin-bottom: 0.35rem; }
+        .share-rule .username { flex: 1; font-size: 0.875rem; color: var(--text-primary); }
+        .share-rule .mode { font-size: 0.7rem; color: var(--text-secondary); }
+        .cal-share-cats { display: flex; gap: 1rem; }
+        .cal-share-cats label { display: flex; align-items: center; gap: 0.35rem; font-size: 0.875rem; color: var(--text-primary); cursor: pointer; margin: 0; }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <h1>Calendar</h1>
+        <div class="user-info">
+            <span id="username-display">Guest</span>
+            <a href="/" class="btn btn-secondary">Back to Home</a>
+            <button class="btn btn-secondary" onclick="logout()">Logout</button>
+        </div>
+    </header>
+
+    <div class="container calendar-page">
+        <div class="cal-toolbar">
+            <nav>
+                <button id="cal-prev" class="btn btn-secondary" title="Previous month">&lsaquo; Prev</button>
+                <button id="cal-next" class="btn btn-secondary" title="Next month">Next &rsaquo;</button>
+            </nav>
+            <h2 id="cal-title"></h2>
+            <nav>
+                <select id="cal-filter" class="cal-filter-select" title="Filter displayed events">
+                    <option value="all">All</option>
+                    <option value="mine">My events</option>
+                    <option value="shared">Shared with me</option>
+                </select>
+                <button id="cal-today" class="btn btn-secondary">Today</button>
+                <button id="cal-add" class="btn btn-primary">+ Add Event</button>
+            </nav>
+        </div>
+
+        <div class="cal-main">
+            <div class="cal-month">
+                <div class="cal-weekdays" id="cal-weekdays"></div>
+                <div class="cal-grid" id="cal-grid">
+                    <div class="cal-loading">Loading events...</div>
+                </div>
+            </div>
+
+            <aside class="cal-side">
+                <div class="section">
+                    <div class="section-header"><h2>Upcoming</h2></div>
+                    <div class="section-content" id="cal-upcoming"></div>
+                </div>
+                <div class="section">
+                    <div class="section-header"><h2>Sharing</h2></div>
+                    <div class="section-content">
+                        <div id="share-rules"></div>
+                        <div class="form-group">
+                            <label for="share-username">Username</label>
+                            <input type="text" id="share-username" maxlength="50" autocomplete="off">
+                        </div>
+                        <div class="form-group">
+                            <label class="all-day-row">
+                                <input type="checkbox" id="share-full">
+                                Full access (sees everything, incl. private)
+                            </label>
+                        </div>
+                        <div class="form-group cal-share-cats" id="share-cats-row" style="display: none;">
+                            <label><input type="checkbox" id="share-work"> Work</label>
+                            <label><input type="checkbox" id="share-public"> Public</label>
+                        </div>
+                        <button id="share-save" class="btn btn-primary" type="button">Save</button>
+                        <div class="cal-error" id="share-error"></div>
+                        <p class="text-muted" style="font-size: 0.75rem; margin-top: 0.75rem;">People with limited access see your granted categories in full; everything else shows as an anonymous busy slot. Users not listed here see nothing.</p>
+                    </div>
+                </div>
+            </aside>
+        </div>
+    </div>
+
+    <div class="cal-modal-overlay" id="cal-modal-overlay">
+        <div class="cal-modal">
+            <h4 id="cal-modal-title">Add Event</h4>
+            <p class="modal-note" id="cal-modal-note" style="display: none;"></p>
+            <div class="form-group">
+                <label for="cal-ev-title">Title</label>
+                <input type="text" id="cal-ev-title" maxlength="100" required>
+            </div>
+            <div class="form-group">
+                <label for="cal-ev-location">Location</label>
+                <input type="text" id="cal-ev-location" maxlength="200">
+            </div>
+            <div class="form-group" id="cal-ev-visibility-group">
+                <label for="cal-ev-visibility">Category</label>
+                <select id="cal-ev-visibility">
+                    <option value="PRIVATE">Private</option>
+                    <option value="WORK">Work</option>
+                    <option value="PUBLIC">Public</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="all-day-row">
+                    <input type="checkbox" id="cal-ev-allday">
+                    All day
+                </label>
+            </div>
+            <div class="form-group">
+                <label for="cal-ev-start">Start</label>
+                <input type="datetime-local" id="cal-ev-start" required>
+            </div>
+            <div class="form-group">
+                <label for="cal-ev-end">End</label>
+                <input type="datetime-local" id="cal-ev-end" required>
+            </div>
+            <div class="form-group">
+                <label for="cal-ev-desc">Description</label>
+                <textarea id="cal-ev-desc" rows="4" maxlength="2000"></textarea>
+            </div>
+            <div class="cal-error" id="cal-error"></div>
+            <div class="cal-modal-actions">
+                <button id="cal-ev-delete" class="btn btn-danger cal-ev-delete" style="display: none;">Delete</button>
+                <button id="cal-ev-cancel" class="btn btn-secondary">Cancel</button>
+                <button id="cal-ev-save" class="btn btn-primary">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '/api';
+        const authToken = localStorage.getItem('authToken');
+        if (!authToken) {
+            window.location.href = '/login';
+        }
+
+        function applyTheme(theme) {
+            const root = document.documentElement;
+            if (theme === 'auto' || !theme) {
+                root.removeAttribute('data-theme');
+            } else {
+                root.setAttribute('data-theme', theme);
+            }
+        }
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme) applyTheme(savedTheme);
+
+        function logout() {
+            localStorage.removeItem('authToken');
+            localStorage.removeItem('refreshToken');
+            localStorage.removeItem('homepage_modules_cache');
+            window.location.href = '/login';
+        }
+
+        const authHeaders = () => ({ 'Authorization': `Bearer ${localStorage.getItem('authToken')}` });
+        const pad2 = n => String(n).padStart(2, '0');
+        const dateKey = (y, m, d) => `${y}-${pad2(m + 1)}-${pad2(d)}`;
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text == null ? '' : String(text);
+            return div.innerHTML;
+        }
+
+        const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+        const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+        const WEEKDAYS_FULL = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+        const now = new Date();
+        let viewYear = now.getFullYear();
+        let viewMonth = now.getMonth();
+        let events = [];
+        let editingId = null;
+        let editingEv = null;
+        let calendarFilter = localStorage.getItem('calendar_page_filter') || 'all';
+
+        function matchesCalendarFilter(ev) {
+            if (calendarFilter === 'mine') return !ev.ownerUsername;
+            if (calendarFilter === 'shared') return !!ev.ownerUsername;
+            return true;
+        }
+
+        const grid = document.getElementById('cal-grid');
+        const weekdaysEl = document.getElementById('cal-weekdays');
+        const titleEl = document.getElementById('cal-title');
+        const upcomingEl = document.getElementById('cal-upcoming');
+        const overlay = document.getElementById('cal-modal-overlay');
+        const errorEl = document.getElementById('cal-error');
+        const deleteBtn = document.getElementById('cal-ev-delete');
+        const saveBtn = document.getElementById('cal-ev-save');
+        const MODAL_FIELD_IDS = ['cal-ev-title', 'cal-ev-location', 'cal-ev-desc', 'cal-ev-start', 'cal-ev-end', 'cal-ev-allday', 'cal-ev-visibility'];
+
+        function daysInMonth(y, m) { return new Date(y, m + 1, 0).getDate(); }
+        function firstWeekday(y, m) { return (new Date(y, m, 1).getDay() + 6) % 7; }
+
+        async function loadEvents() {
+            try {
+                const response = await fetch(`${API_BASE}/events/calendar`, { headers: authHeaders() });
+                if (response.status === 401) {
+                    try {
+                        await refreshToken();
+                        return loadEvents();
+                    } catch (e) {
+                        window.location.href = '/login';
+                        return;
+                    }
+                }
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                events = await response.json();
+                render();
+            } catch (e) {
+                grid.innerHTML = `<div class="cal-loading">Could not load events (${escapeHtml(e.message)}).</div>`;
+            }
+        }
+
+        async function refreshToken() {
+            const refreshToken = localStorage.getItem('refreshToken');
+            if (!refreshToken) throw new Error('No refresh token');
+            const response = await fetch(`${API_BASE}/auth/refresh`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ refreshToken })
+            });
+            if (!response.ok) throw new Error('Refresh failed');
+            const data = await response.json();
+            localStorage.setItem('authToken', data.accessToken);
+            localStorage.setItem('refreshToken', data.refreshToken);
+        }
+
+        function render() {
+            titleEl.textContent = `${MONTH_NAMES[viewMonth]} ${viewYear}`;
+            weekdaysEl.innerHTML = WEEKDAYS.map(w => `<div class="cal-weekday">${w}</div>`).join('');
+            grid.innerHTML = '';
+
+            const total = daysInMonth(viewYear, viewMonth);
+            const offset = firstWeekday(viewYear, viewMonth);
+            const cells = Math.ceil((offset + total) / 7) * 7;
+
+            for (let i = 0; i < cells; i++) {
+                if (i < offset) {
+                    const empty = document.createElement('div');
+                    empty.className = 'cal-cell is-empty';
+                    grid.appendChild(empty);
+                    continue;
+                }
+                grid.appendChild(dayCell(i - offset + 1));
+            }
+
+            renderUpcoming();
+        }
+
+        function dayCell(dayNum) {
+            const div = document.createElement('div');
+            div.className = 'cal-cell';
+
+            const isToday = viewYear === now.getFullYear() && viewMonth === now.getMonth() && dayNum === now.getDate();
+            if (isToday) div.classList.add('is-today');
+
+            const key = dateKey(viewYear, viewMonth, dayNum);
+            const weekdayIndex = (firstWeekday(viewYear, viewMonth) + dayNum - 1) % 7;
+
+            div.innerHTML = `<div class="cal-day-num" title="${WEEKDAYS_FULL[weekdayIndex]}">${dayNum}</div>`;
+
+            events
+                .filter(ev => matchesCalendarFilter(ev))
+                .filter(ev => ev.startAt.slice(0, 10) === key)
+                .forEach(ev => {
+                    if (ev.masked) {
+                        const pill = document.createElement('div');
+                        pill.className = 'cal-event busy';
+                        pill.textContent = 'Busy';
+                        pill.title = 'Busy (unshared event)';
+                        div.appendChild(pill);
+                        return;
+                    }
+                    const pill = document.createElement('div');
+                    pill.className = 'cal-event' + (ev.allDay ? ' allday' : '');
+                    if (!ev.allDay) {
+                        const time = document.createElement('span');
+                        time.className = 'cal-ev-time';
+                        time.textContent = ev.startAt.slice(11, 16);
+                        pill.appendChild(time);
+                    }
+                    pill.appendChild(document.createTextNode(ev.title));
+                    pill.title = ev.ownerUsername
+                        ? `${ev.title} @ ${ev.location || ''} (shared by @${ev.ownerUsername})`
+                        : (ev.location ? `${ev.title} @ ${ev.location}` : ev.title);
+                    pill.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        openModal(ev, key);
+                    });
+                    div.appendChild(pill);
+                });
+
+            div.addEventListener('click', () => openModal(null, key));
+            return div;
+        }
+
+        function renderUpcoming() {
+            const nowKey = dateKey(now.getFullYear(), now.getMonth(), now.getDate());
+            const upcoming = events
+                .filter(ev => matchesCalendarFilter(ev))
+                .filter(ev => ev.startAt.slice(0, 10) >= nowKey)
+                .slice(0, 5);
+
+            if (upcoming.length === 0) {
+                upcomingEl.innerHTML = '<p class="text-muted" style="padding: 0.5rem;">No upcoming events.</p>';
+                return;
+            }
+
+            upcomingEl.innerHTML = '';
+            upcoming.forEach(ev => {
+                const d = document.createElement('div');
+                d.className = 'cal-upcoming';
+
+                const dayName = WEEKDAYS_FULL[(new Date(ev.startAt).getDay() + 6) % 7];
+                const start = new Date(ev.startAt);
+                const dateText = `${dayName} ${dayKeyDate(ev.startAt)}` + (ev.allDay ? '' : ` \u00b7 ${ev.startAt.slice(11, 16)}`);
+
+                d.innerHTML = `
+                    <div class="date">${escapeHtml(dateText)}${ev.allDay ? ' \u00b7 all day' : ''}${ev.ownerUsername ? ' \u00b7 @' + escapeHtml(ev.ownerUsername) : ''}</div>
+                    <div class="title">${escapeHtml(ev.masked ? 'Busy' : ev.title)}</div>
+                    ${ev.location ? `<div class="date" style="margin-top: 0.15rem;">${escapeHtml(ev.location)}</div>` : ''}
+                `;
+                if (!ev.masked) d.querySelector('.title').addEventListener('click', () => openModal(ev, ev.startAt.slice(0, 10)));
+                upcomingEl.appendChild(d);
+            });
+        }
+
+        function dayKeyDate(iso) {
+            const d = new Date(iso);
+            return `${pad2(d.getDate())}.${pad2(d.getMonth() + 1)}`;
+        }
+
+        function openModal(ev, dateStr) {
+            editingId = ev ? ev.id : null;
+            editingEv = ev || null;
+            const readOnly = !!(ev && (ev.ownerUsername || ev.masked));
+            document.getElementById('cal-modal-title').textContent = ev ? (readOnly ? 'View Event' : 'Edit Event') : 'Add Event';
+            errorEl.textContent = '';
+
+            const noteEl = document.getElementById('cal-modal-note');
+            noteEl.style.display = readOnly ? '' : 'none';
+            noteEl.textContent = readOnly ? `Shared by @${ev.ownerUsername || '?'} \u2014 view only.` : '';
+
+            const startDate = ev ? ev.startAt.slice(0, 10) : dateStr;
+            const startDateTime = startDate + 'T' + (ev && !ev.allDay ? ev.startAt.slice(11, 16) : '09:00');
+            const endDateTime = startDate + 'T' + (ev && !ev.allDay ? ev.endAt.slice(11, 16) : '10:00');
+
+            document.getElementById('cal-ev-title').value = ev && !ev.masked ? ev.title : '';
+            document.getElementById('cal-ev-location').value = ev && !ev.masked ? (ev.location || '') : '';
+            document.getElementById('cal-ev-desc').value = ev && !ev.masked ? (ev.description || '') : '';
+            document.getElementById('cal-ev-allday').checked = ev ? ev.allDay : false;
+            document.getElementById('cal-ev-start').value = startDateTime;
+            document.getElementById('cal-ev-end').value = endDateTime;
+            document.getElementById('cal-ev-visibility').value = (ev && !ev.masked && ev.visibility) ? ev.visibility : 'PRIVATE';
+
+            document.getElementById('cal-ev-visibility-group').style.display = readOnly ? 'none' : '';
+            MODAL_FIELD_IDS.forEach(id => { document.getElementById(id).disabled = readOnly; });
+
+            saveBtn.style.display = readOnly ? 'none' : '';
+            deleteBtn.style.display = ev && !readOnly ? '' : 'none';
+            overlay.classList.add('show');
+        }
+
+        function closeModal() {
+            overlay.classList.remove('show');
+            editingId = null;
+            editingEv = null;
+        }
+
+        async function saveEvent() {
+            const title = document.getElementById('cal-ev-title').value.trim();
+            const allDay = document.getElementById('cal-ev-allday').checked;
+            const startInput = document.getElementById('cal-ev-start').value;
+            const endInput = document.getElementById('cal-ev-end').value;
+
+            errorEl.textContent = '';
+            if (!title) { errorEl.textContent = 'Title is required.'; return; }
+            if (!startInput || !endInput) { errorEl.textContent = 'Start and end are required.'; return; }
+
+            const payload = {
+                title,
+                description: document.getElementById('cal-ev-desc').value.trim() || null,
+                location: document.getElementById('cal-ev-location').value.trim() || null,
+                visibility: document.getElementById('cal-ev-visibility').value,
+                allDay,
+                startAt: allDay ? startInput.slice(0, 10) + 'T00:00' : startInput,
+                endAt: allDay ? endInput.slice(0, 10) + 'T23:59' : endInput
+            };
+
+            try {
+                const url = editingId ? `${API_BASE}/events/calendar/${editingId}` : `${API_BASE}/events/calendar`;
+                const method = editingId ? 'PUT' : 'POST';
+                const response = await fetch(url, {
+                    method,
+                    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (response.status === 401) {
+                    try {
+                        await refreshToken();
+                        return saveEvent();
+                    } catch (e) {
+                        window.location.href = '/login';
+                        return;
+                    }
+                }
+                if (!response.ok) {
+                    const data = await response.json().catch(() => ({}));
+                    throw new Error(data.message || `HTTP ${response.status}`);
+                }
+
+                closeModal();
+                await loadEvents();
+                render();
+            } catch (e) {
+                errorEl.textContent = e.message;
+            }
+        }
+
+        async function deleteEvent() {
+            if (!editingId) return;
+            try {
+                const response = await fetch(`${API_BASE}/events/calendar/${editingId}`, {
+                    method: 'DELETE',
+                    headers: authHeaders()
+                });
+                if (response.status === 401) {
+                    try {
+                        await refreshToken();
+                        return deleteEvent();
+                    } catch (e) {
+                        window.location.href = '/login';
+                        return;
+                    }
+                }
+                if (!response.ok) {
+                    const data = await response.json().catch(() => ({}));
+                    throw new Error(data.message || `HTTP ${response.status}`);
+                }
+                closeModal();
+                await loadEvents();
+                render();
+            } catch (e) {
+                errorEl.textContent = e.message;
+            }
+        }
+
+        document.getElementById('cal-prev').addEventListener('click', () => {
+            viewMonth--;
+            if (viewMonth < 0) { viewMonth = 11; viewYear--; }
+            render();
+        });
+
+        document.getElementById('cal-next').addEventListener('click', () => {
+            viewMonth++;
+            if (viewMonth > 11) { viewMonth = 0; viewYear++; }
+            render();
+        });
+
+        document.getElementById('cal-today').addEventListener('click', () => {
+            const t = new Date();
+            viewYear = t.getFullYear();
+            viewMonth = t.getMonth();
+            render();
+        });
+
+        document.getElementById('cal-add').addEventListener('click', () => openModal(null, dateKey(viewYear, viewMonth, now.getDate())));
+        document.getElementById('cal-ev-save').addEventListener('click', saveEvent);
+        deleteBtn.addEventListener('click', deleteEvent);
+        document.getElementById('cal-ev-cancel').addEventListener('click', closeModal);
+
+        const filterSelect = document.getElementById('cal-filter');
+        filterSelect.value = calendarFilter;
+        filterSelect.addEventListener('change', () => {
+            calendarFilter = filterSelect.value;
+            localStorage.setItem('calendar_page_filter', calendarFilter);
+            render();
+        });
+
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) closeModal();
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && overlay.classList.contains('show')) closeModal();
+        });
+
+        async function loadSharing() {
+            try {
+                const response = await fetch(`${API_BASE}/events/calendar/sharing`, { headers: authHeaders() });
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const rules = await response.json();
+                const rulesEl = document.getElementById('share-rules');
+                rulesEl.innerHTML = '';
+                rules.forEach(rule => {
+                    const row = document.createElement('div');
+                    row.className = 'share-rule';
+                    const modeText = rule.mode === 'FULL'
+                        ? 'Full access'
+                        : 'Limited: ' + ((rule.allowedVisibilities || []).join(', ') || '-');
+                    row.innerHTML = `
+                        <span class="username">${escapeHtml(rule.username)}</span>
+                        <span class="mode">${escapeHtml(modeText)}</span>
+                        <button class="btn btn-danger btn-sm">Remove</button>
+                    `;
+                    row.querySelector('button').addEventListener('click', () => removeRule(rule.username));
+                    rulesEl.appendChild(row);
+                });
+            } catch (e) {
+                console.error('Failed to load sharing rules:', e);
+            }
+        }
+
+        async function saveRule() {
+            const shareError = document.getElementById('share-error');
+            const username = document.getElementById('share-username').value.trim();
+            const full = document.getElementById('share-full').checked;
+            const work = document.getElementById('share-work').checked;
+            const isPublic = document.getElementById('share-public').checked;
+
+            shareError.textContent = '';
+            if (!username) { shareError.textContent = 'Username is required.'; return; }
+            if (!full && !work && !isPublic) { shareError.textContent = 'Select full access or at least one category.'; return; }
+
+            const payload = {
+                username,
+                mode: full ? 'FULL' : 'LIMITED',
+                allowedVisibilities: full ? [] : [
+                    ...(work ? ['WORK'] : []),
+                    ...(isPublic ? ['PUBLIC'] : [])
+                ]
+            };
+
+            try {
+                const response = await fetch(`${API_BASE}/events/calendar/sharing`, {
+                    method: 'POST',
+                    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (!response.ok) {
+                    const data = await response.json().catch(() => ({}));
+                    throw new Error(data.message || `HTTP ${response.status}`);
+                }
+                document.getElementById('share-username').value = '';
+                document.getElementById('share-full').checked = false;
+                document.getElementById('share-work').checked = false;
+                document.getElementById('share-public').checked = false;
+                document.getElementById('share-cats-row').style.display = 'none';
+                await loadSharing();
+            } catch (e) {
+                shareError.textContent = e.message;
+            }
+        }
+
+        async function removeRule(username) {
+            try {
+                const response = await fetch(`${API_BASE}/events/calendar/sharing/${encodeURIComponent(username)}`, {
+                    method: 'DELETE',
+                    headers: authHeaders()
+                });
+                if (!response.ok) {
+                    const data = await response.json().catch(() => ({}));
+                    throw new Error(data.message || `HTTP ${response.status}`);
+                }
+                await loadSharing();
+            } catch (e) {
+                document.getElementById('share-error').textContent = e.message;
+            }
+        }
+
+        document.getElementById('share-full').addEventListener('change', (e) => {
+            document.getElementById('share-cats-row').style.display = e.target.checked ? 'none' : 'flex';
+        });
+        document.getElementById('share-save').addEventListener('click', saveRule);
+
+        async function loadUserInfo() {
+            try {
+                const response = await fetch(`${API_BASE}/auth/me`, { headers: authHeaders() });
+                if (response.ok) {
+                    const userInfo = await response.json();
+                    document.getElementById('username-display').textContent = userInfo.username;
+                    if (userInfo.theme) {
+                        applyTheme(userInfo.theme);
+                        localStorage.setItem('theme', userInfo.theme);
+                    }
+                }
+            } catch (e) {
+                console.error('Failed to load user info:', e);
+            }
+        }
+
+        loadUserInfo();
+        loadEvents();
+        loadSharing();
+    </script>
+</body>
+</html>
