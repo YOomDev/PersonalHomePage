@@ -36,4 +36,10 @@ public class WebController {
         model.addAttribute("user", user);
         return "calendar";
     }
+
+    @GetMapping("/chat")
+    public String chat(@AuthenticationPrincipal User user, Model model) {
+        model.addAttribute("user", user);
+        return "chat";
+    }
 }

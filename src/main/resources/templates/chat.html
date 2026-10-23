@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="https://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Private AI Chat - Personal Homepage</title>
+    <link rel="icon" type="image/x-icon" th:href="@{/favicon.ico}">
+    <link rel="stylesheet" th:href="@{/css/main.css}">
+    <style>
+        .chat-page { display: flex; flex-direction: column; height: calc(100vh - 140px); min-height: 500px; }
+        .chat-topbar { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; margin-bottom: 0.5rem; }
+        .chat-topbar select, .chat-topbar input[type="number"] { font-size: 0.9rem; padding: 0.45rem 0.5rem; border: 1px solid var(--input-border); border-radius: var(--radius); background: var(--input-bg); color: var(--text-primary); }
+        .chat-stream-label { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.9rem; color: var(--text-primary); cursor: pointer; user-select: none; }
+        .chat-stream-label input { width: auto; cursor: pointer; }
+        .chat-advanced { background: var(--bg-tertiary); border-radius: var(--radius-lg); padding: 0.75rem 1rem; margin-bottom: 0.75rem; }
+        .chat-advanced summary { cursor: pointer; font-size: 0.9rem; color: var(--text-secondary); user-select: none; font-weight: 600; }
+        .chat-advanced .row { display: flex; flex-direction: column; gap: 0.4rem; margin-top: 0.75rem; }
+        .chat-advanced label { font-size: 0.8rem; color: var(--text-secondary); }
+        .chat-advanced textarea, .chat-advanced input[type="number"] { width: 100%; padding: 0.5rem 0.6rem; border: 1px solid var(--input-border); border-radius: var(--radius); background: var(--input-bg); color: var(--text-primary); font-family: inherit; font-size: 0.875rem; box-sizing: border-box; }
+        .chat-advanced textarea { resize: vertical; min-height: 60px; max-height: 200px; }
+        .chat-advanced-row2 { display: flex; gap: 1rem; }
+        .chat-advanced-row2 > div { flex: 1; }
+        .chat-messages { flex: 1; overflow-y: auto; padding: 1.25rem; background: var(--bg-tertiary); border-radius: var(--radius-lg); display: flex; flex-direction: column; gap: 0.75rem; }
+        .chat-message { padding: 0.75rem 1rem; border-radius: var(--radius-lg); max-width: 80%; font-size: 0.9375rem; }
+        .chat-message.user { align-self: flex-end; background: var(--primary-color); color: var(--text-on-primary); border-bottom-right-radius: 4px; }
+        .chat-message.assistant { align-self: flex-start; background: var(--bg-hover); color: var(--text-primary); border-bottom-left-radius: 4px; width: fit-content; }
+        .chat-message.error { align-self: flex-start; background: var(--error-bg); color: var(--danger-color); border: 1px solid var(--danger-color); width: fit-content; }
+        .chat-message .meta { font-size: 0.7rem; opacity: 0.7; margin-top: 0.35rem; text-align: right; }
+        .chat-input-area { display: flex; gap: 0.5rem; margin-top: 0.75rem; align-items: flex-end; }
+        .chat-input-area textarea { flex: 1; padding: 0.6rem 0.75rem; border: 1px solid var(--input-border); border-radius: var(--radius); background: var(--input-bg); color: var(--text-primary); font-family: inherit; font-size: 0.9375rem; resize: vertical; min-height: 48px; max-height: 200px; box-sizing: border-box; }
+        .chat-input-area textarea:focus { outline: none; border-color: var(--primary-color); }
+        .chat-loading { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--border-color); border-top-color: var(--primary-color); border-radius: 50%; animation: spin 0.8s linear infinite; margin-right: 0.5rem; vertical-align: middle; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .chat-empty { text-align: center; color: var(--text-muted); padding: 3rem 1rem; }
+        .chat-empty a { color: var(--primary-color); }
+        .chat-picker-note { font-size: 0.8rem; color: var(--text-secondary); margin: 0 0 0.75rem; }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <details class="site-menu">
+            <summary title="Go to pages">
+                <h1>Personal Homepage</h1>
+                <span class="site-menu-caret">&#9662;</span>
+            </summary>
+            <div class="site-menu-list">
+                <a href="/">Home</a>
+                <a href="/calendar">Calendar</a>
+                <a href="/chat" class="active">Private AI Chat</a>
+            </div>
+        </details>
+        <div class="user-info">
+            <span id="username-display">Guest</span>
+            <a href="/" class="btn btn-secondary">Back to Home</a>
+            <button class="btn btn-secondary" onclick="logout()">Logout</button>
+        </div>
+    </header>
+
+    <div class="container chat-page">
+        <div class="chat-topbar" id="chat-topbar" style="display: none;">
+            <select id="chat-module" title="Which Private AI Chat module to use"></select>
+            <select id="chat-model" title="Model"></select>
+            <label class="chat-stream-label">
+                <input type="checkbox" id="chat-stream">
+                Stream
+            </label>
+            <button id="chat-clear" class="btn btn-secondary" style="margin-left: auto;">Clear chat</button>
+        </div>
+
+        <details class="chat-advanced" id="chat-advanced" style="display: none;">
+            <summary>Chat settings</summary>
+            <div class="row">
+                <div>
+                    <label for="chat-system-prompt">System prompt</label>
+                    <textarea id="chat-system-prompt" style="width: 100%;"></textarea>
+                </div>
+                <div class="chat-advanced-row2">
+                    <div>
+                        <label for="chat-temperature">Temperature (0 - 2)</label>
+                        <input type="number" id="chat-temperature" min="0" max="2" step="0.1" style="width: 100%; box-sizing: border-box;">
+                    </div>
+                    <div>
+                        <label for="chat-max-tokens">Max tokens</label>
+                        <input type="number" id="chat-max-tokens" min="1" step="1" style="width: 100%; box-sizing: border-box;">
+                    </div>
+                </div>
+            </div>
+        </details>
+
+        <div class="chat-messages" id="chat-messages" style="display: none;">
+            <div class="chat-empty" id="chat-welcome">Welcome! Ask me anything.</div>
+        </div>
+        <div class="chat-input-area" id="chat-input-area" style="display: none;">
+            <textarea id="chat-input" placeholder="Ask something..." rows="1"></textarea>
+            <button id="chat-send" class="btn btn-primary">Send</button>
+        </div>
+        <div class="chat-empty" id="chat-no-modules" style="display: none;">
+            <h3>No Private AI Chat modules yet</h3>
+            <p>Add one on the <a href="/settings">Settings</a> page.</p>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '/api';
+        if (!localStorage.getItem('authToken')) {
+            window.location.href = '/login';
+        }
+
+        function applyTheme(theme) {
+            const root = document.documentElement;
+            if (theme === 'auto' || !theme) root.removeAttribute('data-theme');
+            else root.setAttribute('data-theme', theme);
+        }
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme) applyTheme(savedTheme);
+
+        function logout() {
+            localStorage.removeItem('authToken');
+            localStorage.removeItem('refreshToken');
+            localStorage.removeItem('homepage_modules_cache');
+            window.location.href = '/login';
+        }
+
+        const authHeaders = () => ({ 'Authorization': `Bearer ${localStorage.getItem('authToken')}` });
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text == null ? '' : String(text);
+            return div.innerHTML;
+        }
+
+        const ollamaDefaults = { baseUrl: '', model: '', systemPrompt: 'You are a helpful assistant.', temperature: 0.7, maxTokens: 2000, timeout: 120000 };
+        let ollamaModules = [];
+        let currentModule = null;
+        let sessionSettings = null;
+        let chatHistory = [];
+        let isLoading = false;
+        let modelOptions = null;
+        let modelDefault = '';
+
+        const messagesEl = document.getElementById('chat-messages');
+        const welcomeEl = document.getElementById('chat-welcome');
+        const inputEl = document.getElementById('chat-input');
+        const sendBtn = document.getElementById('chat-send');
+        const moduleSelect = document.getElementById('chat-module');
+        const modelSelect = document.getElementById('chat-model');
+        const streamToggle = document.getElementById('chat-stream');
+
+        async function refreshToken() {
+            const refreshToken = localStorage.getItem('refreshToken');
+            if (!refreshToken) throw new Error('No refresh token');
+            const response = await fetch(`${API_BASE}/auth/refresh`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ refreshToken })
+            });
+            if (!response.ok) throw new Error('Refresh failed');
+            const data = await response.json();
+            localStorage.setItem('authToken', data.accessToken);
+            localStorage.setItem('refreshToken', data.refreshToken);
+        }
+
+        function promptLogin() {
+            localStorage.removeItem('authToken');
+            localStorage.removeItem('refreshToken');
+            window.location.href = '/login';
+        }
+
+        async function loadModels() {
+            if (modelOptions) return;
+            try {
+                const response = await fetch(`${API_BASE}/auth/ollama/models`, { headers: authHeaders() });
+                if (response.status === 401) { try { await refreshToken(); return loadModels(); } catch (e) { return promptLogin(); } }
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const data = await response.json();
+                modelOptions = data.models || [];
+                modelDefault = data.defaultModel || '';
+            } catch (e) {
+                modelOptions = [ollamaDefaults.model];
+                modelDefault = ollamaDefaults.model;
+            }
+        }
+
+        function populateModelSelect(selected) {
+            modelSelect.innerHTML = modelOptions.map(m => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join('');
+            if (selected && modelOptions.includes(selected)) {
+                modelSelect.value = selected;
+            } else if (modelDefault && modelOptions.includes(modelDefault)) {
+                modelSelect.value = modelDefault;
+            }
+        }
+
+        function activeStream() { return streamToggle.checked; }
+        function activeSettings() {
+            return {
+                model: modelSelect.value,
+                systemPrompt: document.getElementById('chat-system-prompt').value.trim() || ollamaDefaults.systemPrompt,
+                temperature: parseFloat(document.getElementById('chat-temperature').value) || ollamaDefaults.temperature,
+                maxTokens: parseInt(document.getElementById('chat-max-tokens').value) || ollamaDefaults.maxTokens
+            };
+        }
+
+        function selectModule(m) {
+            currentModule = m;
+            const config = m.config || {};
+            sessionSettings = {
+                baseUrl: config.baseUrl || ollamaDefaults.baseUrl,
+                timeout: config.timeout || ollamaDefaults.timeout
+            };
+            document.getElementById('chat-system-prompt').value = config.systemPrompt || ollamaDefaults.systemPrompt;
+            document.getElementById('chat-temperature').value = config.temperature != null ? config.temperature : ollamaDefaults.temperature;
+            document.getElementById('chat-max-tokens').value = config.maxTokens || ollamaDefaults.maxTokens;
+            streamToggle.checked = config.stream === true;
+            populateModelSelect(config.model);
+            clearChat();
+        }
+
+        function clearChat() {
+            chatHistory = [];
+            messagesEl.querySelectorAll('.chat-message').forEach(el => el.remove());
+            welcomeEl.style.display = '';
+        }
+
+        function formatTime() {
+            return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+
+        function addMessage(role, content, meta) {
+            const div = document.createElement('div');
+            div.className = 'chat-message ' + role;
+            const metaText = meta ? ' \u00b7 ' + meta : '';
+            div.innerHTML = '<div>' + escapeHtml(content) + '</div><div class="meta">' + (role === 'user' ? 'You' : role === 'error' ? 'Error' : 'Assistant') + ' \u00b7 ' + formatTime() + metaText + '</div>';
+            messagesEl.appendChild(div);
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+            return div;
+        }
+
+        function addMessageRaw(content) {
+            const div = document.createElement('div');
+            div.className = 'chat-message assistant';
+            div.innerHTML = '<div>' + content + '</div><div class="meta">Assistant \u00b7 ' + formatTime() + '</div>';
+            messagesEl.appendChild(div);
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+            return div;
+        }
+
+        function setLoading(loading) {
+            isLoading = loading;
+            sendBtn.disabled = loading;
+            inputEl.disabled = loading;
+            sendBtn.innerHTML = loading ? '<span class="chat-loading"></span>Sending...' : 'Send';
+        }
+
+        async function sendMessage() {
+            if (!currentModule || isLoading) return;
+            const text = inputEl.value.trim();
+            if (!text) return;
+
+            welcomeEl.style.display = 'none';
+            addMessage('user', text);
+            inputEl.value = '';
+            inputEl.style.height = 'auto';
+            chatHistory.push({ role: 'user', content: text });
+
+            const settings = activeSettings();
+            const assistantMsg = addMessageRaw('<span class="chat-loading"></span>Thinking...');
+            const contentDiv = assistantMsg.querySelector('div');
+            setLoading(true);
+
+            const messages = [{ role: 'system', content: settings.systemPrompt }, ...chatHistory];
+            const streaming = activeStream();
+
+            try {
+                const response = await fetch(sessionSettings.baseUrl + '/api/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        model: settings.model,
+                        messages,
+                        stream: streaming,
+                        options: { temperature: settings.temperature, num_predict: settings.maxTokens }
+                    }),
+                    signal: AbortSignal.timeout(sessionSettings.timeout)
+                });
+
+                if (response.status === 401 && response.url && response.url.includes('/api')) {
+                    try { await refreshToken(); return sendMessage(); } catch (e) { return promptLogin(); }
+                }
+                if (!response.ok) {
+                    const err = await response.json().catch(() => ({ error: 'HTTP ' + response.status }));
+                    throw new Error(err.error || ('HTTP ' + response.status));
+                }
+
+                let content = '';
+                let meta = '';
+
+                if (streaming) {
+                    const reader = response.body.getReader();
+                    const decoder = new TextDecoder();
+                    let buffer = '';
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+                        buffer += decoder.decode(value, { stream: true });
+                        let nl;
+                        while ((nl = buffer.indexOf('\n')) !== -1) {
+                            const line = buffer.slice(0, nl).trim();
+                            buffer = buffer.slice(nl + 1);
+                            if (!line) continue;
+                            let chunk;
+                            try { chunk = JSON.parse(line); } catch (e) { continue; }
+                            if (chunk.message && chunk.message.content) {
+                                content += chunk.message.content;
+                                contentDiv.innerHTML = escapeHtml(content);
+                                messagesEl.scrollTop = messagesEl.scrollHeight;
+                            }
+                            if (chunk.done) {
+                                if (chunk.eval_count) meta += chunk.eval_count + ' tokens';
+                                if (chunk.eval_duration) meta += (meta ? ' ' : '') + 'in ' + (chunk.eval_duration / 1e9).toFixed(1) + 's';
+                            }
+                        }
+                    }
+                } else {
+                    const data = await response.json();
+                    content = data.message && data.message.content ? data.message.content : 'No response';
+                    if (data.eval_count) meta += data.eval_count + ' tokens';
+                    if (data.eval_duration) meta += ' in ' + (data.eval_duration / 1e9).toFixed(1) + 's';
+                }
+
+                if (!content) content = 'No response';
+                chatHistory.push({ role: 'assistant', content });
+                assistantMsg.outerHTML = '<div class="chat-message assistant">' +
+                    '<div>' + escapeHtml(content) + '</div><div class="meta">Assistant \u00b7 ' + formatTime() + (meta ? ' \u00b7 ' + escapeHtml(meta) : '') + '</div></div>';
+                messagesEl.scrollTop = messagesEl.scrollHeight;
+            } catch (e) {
+                console.error('Ollama chat error:', e);
+                const reason = e.name === 'AbortError' ? 'Request timed out' : (e.message || 'Failed to get response');
+                chatHistory.pop();
+                assistantMsg.remove();
+                addMessage('error', reason, '');
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        async function loadModules() {
+            try {
+                const response = await fetch(`${API_BASE}/modules`, { headers: authHeaders() });
+                if (response.status === 401) { try { await refreshToken(); return loadModules(); } catch (e) { return promptLogin(); } }
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const modules = await response.json();
+                ollamaModules = modules.filter(m => (m.type || '').toUpperCase() === 'OLLAMA' && m.enabled);
+
+                if (ollamaModules.length === 0) {
+                    document.getElementById('chat-no-modules').style.display = '';
+                    return;
+                }
+
+                document.getElementById('chat-topbar').style.display = '';
+                document.getElementById('chat-advanced').style.display = '';
+                document.getElementById('chat-messages').style.display = '';
+                document.getElementById('chat-input-area').style.display = '';
+
+                moduleSelect.innerHTML = ollamaModules.map((m, i) => {
+                    const model = (m.config && m.config.model) ? m.config.model : '(default model)';
+                    return `<option value="${m.id}">${escapeHtml(model)} (${m.type} #${m.id})</option>`;
+                }).join('');
+                moduleSelect.addEventListener('change', () => {
+                    const m = ollamaModules.find(x => x.id === parseInt(moduleSelect.value));
+                    if (m) selectModule(m);
+                });
+                await loadModels();
+                selectModule(ollamaModules[0]);
+            } catch (e) {
+                console.error('Failed to load modules:', e);
+                document.getElementById('chat-no-modules').style.display = '';
+            }
+        }
+
+        sendBtn.addEventListener('click', sendMessage);
+        document.getElementById('chat-clear').addEventListener('click', clearChat);
+
+        inputEl.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+
+        inputEl.addEventListener('input', () => {
+            inputEl.style.height = 'auto';
+            inputEl.style.height = Math.min(inputEl.scrollHeight, 200) + 'px';
+        });
+
+        modelSelect.addEventListener('change', () => {
+            if (chatHistory.length > 0) clearChat();
+        });
+
+        async function loadUserInfo() {
+            try {
+                const response = await fetch(`${API_BASE}/auth/me`, { headers: authHeaders() });
+                if (response.ok) {
+                    const userInfo = await response.json();
+                    document.getElementById('username-display').textContent = userInfo.username;
+                    if (userInfo.theme) {
+                        applyTheme(userInfo.theme);
+                        localStorage.setItem('theme', userInfo.theme);
+                    }
+                }
+            } catch (e) {
+                console.error('Failed to load user info:', e);
+            }
+        }
+
+        loadUserInfo();
+        loadModules();
+
+        document.addEventListener('click', (e) => {
+            document.querySelectorAll('details.site-menu[open]').forEach(menu => {
+                if (!menu.contains(e.target)) menu.removeAttribute('open');
+            });
+        });
+    </script>
+</body>
+</html>
