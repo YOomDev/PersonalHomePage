@@ -297,13 +297,14 @@
             const cells = Math.ceil((offset + total) / 7) * 7;
 
             for (let i = 0; i < cells; i++) {
-                if (i < offset) {
+                const dayNum = i - offset + 1;
+                if (dayNum < 1 || dayNum > total) {
                     const empty = document.createElement('div');
                     empty.className = 'cal-cell is-empty';
                     grid.appendChild(empty);
                     continue;
                 }
-                grid.appendChild(dayCell(i - offset + 1));
+                grid.appendChild(dayCell(dayNum));
             }
 
             renderUpcoming();

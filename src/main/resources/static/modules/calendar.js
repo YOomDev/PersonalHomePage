@@ -190,13 +190,10 @@ function CalendarModule(config, container, moduleRef) {
         // Enough rows to fit; keep grid tiles even (6 rows max)
         const cells = Math.ceil(offset / 7) * 7;
 
+        const firstDay = firstWeekday(viewYear, viewMonth);
         for (let i = 0; i < cells; i++) {
-            if (i < firstWeekday(viewYear, viewMonth)) {
-                grid.appendChild(emptyCell());
-                continue;
-            }
-            const dayNum = i - firstWeekday(viewYear, viewMonth) + 1;
-            grid.appendChild(dayCell(dayNum));
+            const dayNum = i - firstDay + 1;
+            grid.appendChild(dayNum >= 1 && dayNum <= total ? dayCell(dayNum) : emptyCell());
         }
     }
 
