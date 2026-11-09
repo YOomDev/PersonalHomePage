@@ -38,6 +38,9 @@ public class CalendarEvent {
     @Column(nullable = false)
     private boolean allDay;
 
+    @Column(length = 20)
+    private String color;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "visibility")
     private CalendarVisibility visibility;

@@ -76,6 +76,7 @@ public class CalendarEventService {
         event.setStartAt(start);
         event.setEndAt(end);
         event.setAllDay(dto.isAllDay());
+        event.setColor(colorOrNull(dto.getColor()));
         if (dto.getVisibility() != null) {
             event.setVisibility(dto.getVisibility());
         } else if (event.getVisibility() == null) {
@@ -92,8 +93,19 @@ public class CalendarEventService {
                 .startAt(event.getStartAt())
                 .endAt(event.getEndAt())
                 .allDay(event.isAllDay())
+                .color(event.getColor())
                 .visibility(event.getVisibility() != null ? event.getVisibility() : CalendarVisibility.PRIVATE)
                 .username(event.getUser().getUsername())
                 .build();
+    }
+
+    private static final java.util.regex.Pattern HEX_COLOR =
+            java.util.regex.Pattern.compile("^#[0-9a-fA-F]{3,8}$");
+
+    private String colorOrNull(String color) {
+        if (color == null || color.isBlank()) {
+            return null;
+        }
+        return HEX_COLOR.matcher(color.trim()).matches() ? color.trim() : null;
     }
 }

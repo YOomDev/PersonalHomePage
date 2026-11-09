@@ -28,8 +28,8 @@
         .cal-event.allday { background: var(--success-color, #27ae60); }
         .cal-event .cal-ev-time { opacity: 0.75; font-size: 0.65rem; margin-right: 4px; }
         .cal-event.busy { background: var(--text-muted, #999); opacity: 0.55; cursor: default; }
-        .cal-side { width: 260px; display: flex; flex-direction: column; gap: 1rem; flex-shrink: 0; }
-        .cal-side .section-content { overflow-y: auto; max-height: 70vh; }
+        .cal-side { width: 260px; display: flex; flex-direction: column; gap: 1rem; flex-shrink: 0; min-height: 0; overflow-y: auto; }
+        .cal-side .section { flex: none; }
         .cal-upcoming { padding: 0.5rem 0.75rem; border-radius: var(--radius); background: var(--bg-tertiary); margin-bottom: 0.5rem; }
         .cal-upcoming .date { font-size: 0.7rem; color: var(--text-secondary); }
         .cal-upcoming .title { font-size: 0.875rem; color: var(--text-primary); margin-top: 0.15rem; cursor: pointer; }
@@ -60,6 +60,25 @@
         .share-rule .mode { font-size: 0.7rem; color: var(--text-secondary); }
         .cal-share-cats { display: flex; gap: 1rem; }
         .cal-share-cats label { display: flex; align-items: center; gap: 0.35rem; font-size: 0.875rem; color: var(--text-primary); cursor: pointer; margin: 0; }
+
+        .cal-color-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+        .cal-color-swatch { width: 22px; height: 22px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; transition: transform 0.1s, border-color 0.1s; flex: none; }
+        .cal-color-swatch:hover { transform: scale(1.15); }
+        .cal-color-swatch.selected { border-color: var(--text-primary); box-shadow: 0 0 0 2px var(--bg-secondary, #fff); }
+        .cal-color-none { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; border: 1px dashed var(--border-color); cursor: pointer; color: var(--text-secondary); font-size: 12px; line-height: 1; flex: none; }
+        .cal-modal input[type="time"], .cal-modal input[type="date"], .cal-modal input[type="number"] { width: 100%; padding: 0.5rem 0.6rem; border: 1px solid var(--input-border); border-radius: var(--radius); background: var(--input-bg); color: var(--text-primary); font-family: inherit; font-size: 0.875rem; box-sizing: border-box; color-scheme: inherit; }
+        .cal-modal input[type="checkbox"] { width: auto; cursor: pointer; }
+
+        .shift-subhead { font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.03em; margin: 0.75rem 0 0.4rem; }
+        .shift-item { display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0.6rem; background: var(--bg-tertiary); border-radius: var(--radius); margin-bottom: 0.35rem; font-size: 0.8125rem; }
+        .shift-item .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--primary-color); flex: none; }
+        .shift-item .info { flex: 1; min-width: 0; }
+        .shift-item .name { color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .shift-item .sub { font-size: 0.7rem; color: var(--text-secondary); }
+        .shift-item .actions { display: flex; gap: 0.3rem; flex: none; }
+        .shift-row { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.35rem; }
+        .shift-row label { flex: none; width: 90px; margin: 0; font-size: 0.8125rem; color: var(--text-secondary); }
+        .shift-row select { flex: 1; margin: 0; }
     </style>
 </head>
 <body>
@@ -136,6 +155,18 @@
                         <p class="text-muted" style="font-size: 0.75rem; margin-top: 0.75rem;">People with limited access see your granted categories in full; everything else shows as an anonymous busy slot. Users not listed here see nothing.</p>
                     </div>
                 </div>
+                <div class="section">
+                    <div class="section-header"><h2>Shift Schedules</h2></div>
+                    <div class="section-content">
+                        <div class="shift-subhead">Shift templates</div>
+                        <div id="shift-templates"></div>
+                        <button id="tpl-add" class="btn btn-secondary btn-sm" type="button">+ Add template</button>
+                        <div class="shift-subhead">Patterns</div>
+                        <div id="shift-schedules"></div>
+                        <button id="sched-add" class="btn btn-primary btn-sm" type="button">+ Add pattern</button>
+                        <p class="text-muted" style="font-size: 0.75rem; margin-top: 0.75rem;">Occurrences are generated from your patterns and shown in the calendar. Click one to view it or delete just that day; the pattern itself keeps repeating.</p>
+                    </div>
+                </div>
             </aside>
         </div>
     </div>
@@ -178,11 +209,91 @@
                 <label for="cal-ev-desc">Description</label>
                 <textarea id="cal-ev-desc" rows="4" maxlength="2000"></textarea>
             </div>
+            <div class="form-group">
+                <label>Color</label>
+                <div class="cal-color-row" id="cal-ev-colors"></div>
+            </div>
             <div class="cal-error" id="cal-error"></div>
             <div class="cal-modal-actions">
                 <button id="cal-ev-delete" class="btn btn-danger cal-ev-delete" style="display: none;">Delete</button>
                 <button id="cal-ev-cancel" class="btn btn-secondary">Cancel</button>
                 <button id="cal-ev-save" class="btn btn-primary">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="cal-modal-overlay" id="tpl-modal-overlay">
+        <div class="cal-modal">
+            <h4 id="tpl-modal-title">Add Shift Template</h4>
+            <div class="form-group">
+                <label for="tpl-name">Name</label>
+                <input type="text" id="tpl-name" maxlength="100" required>
+            </div>
+            <div class="form-group">
+                <label class="all-day-row">
+                    <input type="checkbox" id="tpl-allday">
+                    All day
+                </label>
+            </div>
+            <div class="form-group" id="tpl-times">
+                <div class="shift-row"><label for="tpl-start">Start time</label><input type="time" id="tpl-start" value="06:00"></div>
+                <div class="shift-row"><label for="tpl-end">End time</label><input type="time" id="tpl-end" value="14:00"></div>
+            </div>
+            <div class="form-group">
+                <label>Color</label>
+                <div class="cal-color-row" id="tpl-color-row"></div>
+            </div>
+            <div class="cal-error" id="tpl-error"></div>
+            <div class="cal-modal-actions">
+                <button id="tpl-cancel" class="btn btn-secondary">Cancel</button>
+                <button id="tpl-save" class="btn btn-primary">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="cal-modal-overlay" id="sched-modal-overlay">
+        <div class="cal-modal">
+            <h4 id="sched-modal-title">Add Repeating Schedule</h4>
+            <div class="form-group">
+                <label for="sched-name">Name</label>
+                <input type="text" id="sched-name" maxlength="100" required>
+            </div>
+            <div class="form-group">
+                <label for="sched-type">Type</label>
+                <select id="sched-type">
+                    <option value="WEEKLY">Weekly pattern</option>
+                    <option value="ROTATION">Rotation cycle</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="sched-visibility">Category</label>
+                <select id="sched-visibility">
+                    <option value="PRIVATE">Private</option>
+                    <option value="WORK">Work</option>
+                    <option value="PUBLIC">Public</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="sched-start">Start date</label>
+                <input type="date" id="sched-start">
+            </div>
+            <div class="form-group" id="sched-cycle-group" style="display: none;">
+                <label for="sched-cycle">Cycle length (days)</label>
+                <input type="number" id="sched-cycle" min="1" max="366" value="8">
+            </div>
+            <div class="form-group" id="sched-end-group">
+                <label for="sched-end">End date (optional)</label>
+                <input type="date" id="sched-end">
+            </div>
+            <div class="form-group">
+                <label id="sched-assign-label">Shift assignments</label>
+                <div id="sched-shifts"></div>
+            </div>
+            <div class="cal-error" id="sched-error"></div>
+            <div class="cal-modal-actions">
+                <button id="sched-delete" class="btn btn-danger cal-ev-delete" style="display: none;">Delete</button>
+                <button id="sched-cancel" class="btn btn-secondary">Cancel</button>
+                <button id="sched-save" class="btn btn-primary">Save</button>
             </div>
         </div>
     </div>
@@ -225,6 +336,52 @@
         const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
         const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
         const WEEKDAYS_FULL = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+        const EVENT_COLORS = ['#c0392b', '#d35400', '#8e44ad', '#1a5276', '#148f77', '#1e8449', '#2c3e50', '#607d8b'];
+        const CATEGORY_BORDER = { PRIVATE: '#7f8c8d', WORK: '#8e44ad', PUBLIC: '#27ae60' };
+        let selectedColor = null;
+
+        function applyEventColors(pill, ev) {
+            if (ev.color) {
+                pill.style.background = ev.color;
+            }
+            const category = (ev.visibility || '').toUpperCase();
+            if (CATEGORY_BORDER[category]) {
+                pill.style.borderColor = CATEGORY_BORDER[category];
+            }
+        }
+
+        function buildColorRow(rowEl, initial) {
+            rowEl.innerHTML = '<span class="cal-color-none" title="Default color">✕</span>' +
+                EVENT_COLORS.map(c => `<span class="cal-color-swatch" data-color="${c}" style="background:${c}"></span>`).join('');
+            const mark = (color) => {
+                rowEl.dataset.color = color || '';
+                rowEl.querySelectorAll('.cal-color-swatch').forEach(x =>
+                    x.classList.toggle('selected', !!color && x.dataset.color === color));
+            };
+            rowEl.querySelectorAll('.cal-color-swatch').forEach(sw => {
+                sw.addEventListener('click', () => mark(sw.dataset.color));
+            });
+            rowEl.querySelector('.cal-color-none').addEventListener('click', () => mark(''));
+            mark(initial);
+        }
+
+        async function excludeOccurrence(ev) {
+            try {
+                const response = await fetch(`${API_BASE}/schedules/shifts/${ev.scheduleId}/occurrence/${ev.startAt.slice(0, 10)}`, {
+                    method: 'DELETE',
+                    headers: authHeaders()
+                });
+                if (!response.ok) {
+                    const data = await response.json().catch(() => ({}));
+                    throw new Error(data.message || `HTTP ${response.status}`);
+                }
+                await loadEvents();
+            } catch (e) {
+                console.error('Failed to delete occurrence:', e);
+                alert(`Could not delete occurrence: ${e.message}`);
+            }
+        }
 
         const now = new Date();
         let viewYear = now.getFullYear();
@@ -343,13 +500,17 @@
                         pill.appendChild(time);
                     }
                     pill.appendChild(document.createTextNode(ev.title));
+                    const baseTitle = ev.location
+                        ? `${ev.title} @ ${ev.location}`
+                        : ev.title;
                     pill.title = ev.ownerUsername
-                        ? `${ev.title} @ ${ev.location || ''} (shared by @${ev.ownerUsername})`
-                        : (ev.location ? `${ev.title} @ ${ev.location}` : ev.title);
+                        ? `${baseTitle} (shared by @${ev.ownerUsername})${ev.virtual ? ' \u2014 repeating' : ''}`
+                        : (ev.virtual ? `${baseTitle} (repeating pattern)` : baseTitle);
                     pill.addEventListener('click', (e) => {
                         e.stopPropagation();
                         openModal(ev, key);
                     });
+                    applyEventColors(pill, ev);
                     div.appendChild(pill);
                 });
 
@@ -362,7 +523,7 @@
             const upcoming = events
                 .filter(ev => matchesCalendarFilter(ev))
                 .filter(ev => ev.startAt.slice(0, 10) >= nowKey)
-                .slice(0, 5);
+                .slice(0, 10);
 
             if (upcoming.length === 0) {
                 upcomingEl.innerHTML = '<p class="text-muted" style="padding: 0.5rem;">No upcoming events.</p>';
@@ -396,13 +557,21 @@
         function openModal(ev, dateStr) {
             editingId = ev ? ev.id : null;
             editingEv = ev || null;
-            const readOnly = !!(ev && (ev.ownerUsername || ev.masked));
-            document.getElementById('cal-modal-title').textContent = ev ? (readOnly ? 'View Event' : 'Edit Event') : 'Add Event';
+            const ownVirtual = !!(ev && ev.virtual && !ev.ownerUsername && !ev.masked);
+            const readOnly = !!(ev && (ev.ownerUsername || ev.masked || ownVirtual));
+            document.getElementById('cal-modal-title').textContent = ev ? (ownVirtual ? 'Repeating Occurrence' : (readOnly ? 'View Event' : 'Edit Event')) : 'Add Event';
             errorEl.textContent = '';
 
             const noteEl = document.getElementById('cal-modal-note');
-            noteEl.style.display = readOnly ? '' : 'none';
-            noteEl.textContent = readOnly ? `Shared by @${ev.ownerUsername || '?'} \u2014 view only.` : '';
+            if (readOnly && !ownVirtual) {
+                noteEl.style.display = '';
+                noteEl.textContent = `Shared by @${ev.ownerUsername || '?'} \u2014 view only.`;
+            } else if (ownVirtual) {
+                noteEl.style.display = '';
+                noteEl.textContent = 'Generated by a repeating pattern \u2014 delete removes only this day; the pattern keeps repeating.';
+            } else {
+                noteEl.style.display = 'none';
+            }
 
             const startDate = ev ? ev.startAt.slice(0, 10) : dateStr;
             const startDateTime = startDate + 'T' + (ev && !ev.allDay ? ev.startAt.slice(11, 16) : '09:00');
@@ -416,11 +585,13 @@
             document.getElementById('cal-ev-end').value = endDateTime;
             document.getElementById('cal-ev-visibility').value = (ev && !ev.masked && ev.visibility) ? ev.visibility : 'PRIVATE';
 
+            buildColorRow(document.getElementById('cal-ev-colors'), ev && !ev.masked && !ev.ownerUsername ? ev.color : null);
+
             document.getElementById('cal-ev-visibility-group').style.display = readOnly ? 'none' : '';
             MODAL_FIELD_IDS.forEach(id => { document.getElementById(id).disabled = readOnly; });
 
             saveBtn.style.display = readOnly ? 'none' : '';
-            deleteBtn.style.display = ev && !readOnly ? '' : 'none';
+            deleteBtn.style.display = ev && (!readOnly || ownVirtual) ? '' : 'none';
             overlay.classList.add('show');
         }
 
@@ -446,6 +617,7 @@
                 location: document.getElementById('cal-ev-location').value.trim() || null,
                 visibility: document.getElementById('cal-ev-visibility').value,
                 allDay,
+                color: document.getElementById('cal-ev-colors').dataset.color || null,
                 startAt: allDay ? startInput.slice(0, 10) + 'T00:00' : startInput,
                 endAt: allDay ? endInput.slice(0, 10) + 'T23:59' : endInput
             };
@@ -482,7 +654,14 @@
         }
 
         async function deleteEvent() {
-            if (!editingId) return;
+            if (!editingId) {
+                // Virtual (recurring) occurrence: hide just this day via an exclusion
+                if (editingEv && editingEv.virtual && !editingEv.ownerUsername) {
+                    closeModal();
+                    await excludeOccurrence(editingEv);
+                }
+                return;
+            }
             try {
                 const response = await fetch(`${API_BASE}/events/calendar/${editingId}`, {
                     method: 'DELETE',
@@ -653,9 +832,309 @@
             }
         }
 
+        // ---------- Shift templates & repeating schedules ----------
+
+        let shiftTemplates = [];
+        let shiftSchedules = [];
+        let editingTemplateId = null;
+        let editingScheduleId = null;
+        let schedSelection = {}; // dayPosition -> templateId
+
+        const tplOverlay = document.getElementById('tpl-modal-overlay');
+        const schedOverlay = document.getElementById('sched-modal-overlay');
+
+        function describeTimes(t) {
+            return t.allDay ? 'All day' : `${t.startTime.slice(0, 5)} \u2013 ${t.endTime.slice(0, 5)}`;
+        }
+
+        async function loadShiftTemplates() {
+            const el = document.getElementById('shift-templates');
+            try {
+                const response = await fetch(`${API_BASE}/schedules/shifts/templates`, { headers: authHeaders() });
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                shiftTemplates = await response.json();
+                el.innerHTML = '';
+                if (shiftTemplates.length === 0) {
+                    el.innerHTML = '<p class="text-muted" style="font-size: 0.75rem;">No templates yet \u2014 add one to start building patterns.</p>';
+                    return;
+                }
+                shiftTemplates.forEach(t => {
+                    const row = document.createElement('div');
+                    row.className = 'shift-item';
+                    row.innerHTML = `
+                        <span class="dot" style="${t.color ? `background:${escapeHtml(t.color)}` : ''}"></span>
+                        <div class="info">
+                            <div class="name">${escapeHtml(t.name)}</div>
+                            <div class="sub">${escapeHtml(describeTimes(t))}</div>
+                        </div>
+                        <div class="actions">
+                            <button class="btn btn-secondary btn-sm">Edit</button>
+                            <button class="btn btn-danger btn-sm">Del</button>
+                        </div>`;
+                    row.querySelector('.actions .btn-secondary').addEventListener('click', () => openTemplateModal(t));
+                    row.querySelector('.actions .btn-danger').addEventListener('click', () => deleteTemplate(t));
+                    el.appendChild(row);
+                });
+            } catch (e) {
+                el.innerHTML = `<p class="text-muted">Failed to load templates (${escapeHtml(e.message)})</p>`;
+            }
+        }
+
+        function openTemplateModal(t) {
+            editingTemplateId = t ? t.id : null;
+            document.getElementById('tpl-modal-title').textContent = t ? 'Edit Shift Template' : 'Add Shift Template';
+            document.getElementById('tpl-error').textContent = '';
+            document.getElementById('tpl-name').value = t ? t.name : '';
+            document.getElementById('tpl-allday').checked = t ? t.allDay : false;
+            document.getElementById('tpl-start').value = t && t.startTime ? t.startTime.slice(0, 5) : '06:00';
+            document.getElementById('tpl-end').value = t && t.endTime ? t.endTime.slice(0, 5) : '14:00';
+            document.getElementById('tpl-times').style.display = document.getElementById('tpl-allday').checked ? 'none' : '';
+            buildColorRow(document.getElementById('tpl-color-row'), t ? t.color : null);
+            tplOverlay.classList.add('show');
+        }
+
+        async function saveTemplate() {
+            const errEl = document.getElementById('tpl-error');
+            errEl.textContent = '';
+            const name = document.getElementById('tpl-name').value.trim();
+            if (!name) { errEl.textContent = 'Name is required.'; return; }
+            const allDay = document.getElementById('tpl-allday').checked;
+            const payload = {
+                name,
+                allDay,
+                color: document.getElementById('tpl-color-row').dataset.color || null,
+                startTime: allDay ? null : document.getElementById('tpl-start').value || null,
+                endTime: allDay ? null : document.getElementById('tpl-end').value || null
+            };
+
+            try {
+                const url = editingTemplateId ? `${API_BASE}/schedules/shifts/templates/${editingTemplateId}` : `${API_BASE}/schedules/shifts/templates`;
+                const response = await fetch(url, {
+                    method: editingTemplateId ? 'PUT' : 'POST',
+                    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (!response.ok) {
+                    const data = await response.json().catch(() => ({}));
+                    throw new Error(data.message || `HTTP ${response.status}`);
+                }
+                tplOverlay.classList.remove('show');
+                await loadShiftTemplates();
+            } catch (e) {
+                errEl.textContent = e.message;
+            }
+        }
+
+        async function deleteTemplate(t) {
+            if (!confirm(`Delete shift template "${t.name}"?`)) return;
+            try {
+                const response = await fetch(`${API_BASE}/schedules/shifts/templates/${t.id}`, {
+                    method: 'DELETE',
+                    headers: authHeaders()
+                });
+                if (!response.ok) {
+                    const data = await response.json().catch(() => ({}));
+                    throw new Error(data.message || `HTTP ${response.status}`);
+                }
+                await loadShiftTemplates();
+            } catch (e) {
+                alert(e.message);
+            }
+        }
+
+        // ---------- Schedules ----------
+
+        function scheduleSubText(s) {
+            const parts = (s.shifts || []).filter(x => x.template)
+                .sort((a, b) => a.dayPosition - b.dayPosition)
+                .map(x => `${s.type === 'WEEKLY' ? WEEKDAYS[x.dayPosition] : 'Day ' + (x.dayPosition + 1)}: ${x.template.name}`);
+            const prefix = s.type === 'WEEKLY' ? 'Weekly' : `Every ${s.cycleLength} day${s.cycleLength === 1 ? '' : 's'}${s.startDate ? ` from ${s.startDate.slice(8)}.${s.startDate.slice(5, 7)}.${s.startDate.slice(0, 4)}` : ''}`;
+            return `${prefix} \u2014 ${parts.length ? parts.join(', ') : 'no shifts'}`;
+        }
+
+        async function loadShiftSchedules() {
+            const el = document.getElementById('shift-schedules');
+            try {
+                const response = await fetch(`${API_BASE}/schedules/shifts`, { headers: authHeaders() });
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                shiftSchedules = await response.json();
+                el.innerHTML = '';
+                if (shiftSchedules.length === 0) {
+                    el.innerHTML = '<p class="text-muted" style="font-size: 0.75rem;">No patterns yet.</p>';
+                    return;
+                }
+                shiftSchedules.forEach(s => {
+                    const row = document.createElement('div');
+                    row.className = 'shift-item';
+                    row.innerHTML = `
+                        <span class="dot" style="background:${CATEGORY_BORDER[s.visibility] || 'var(--primary-color)'}"></span>
+                        <div class="info">
+                            <div class="name">${escapeHtml(s.name)}</div>
+                            <div class="sub">${escapeHtml(scheduleSubText(s))}</div>
+                        </div>
+                        <div class="actions">
+                            <button class="btn btn-secondary btn-sm">Edit</button>
+                            <button class="btn btn-danger btn-sm">Del</button>
+                        </div>`;
+                    row.querySelector('.actions .btn-secondary').addEventListener('click', () => openScheduleModal(s));
+                    row.querySelector('.actions .btn-danger').addEventListener('click', async () => {
+                        if (!confirm(`Delete repeating schedule "${s.name}"? All of its occurrences disappear.`)) return;
+                        try {
+                            const response = await fetch(`${API_BASE}/schedules/shifts/${s.id}`, { method: 'DELETE', headers: authHeaders() });
+                            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                            await loadShiftSchedules();
+                            await loadEvents();
+                        } catch (e) {
+                            alert(e.message);
+                        }
+                    });
+                    el.appendChild(row);
+                });
+            } catch (e) {
+                el.innerHTML = `<p class="text-muted">Failed to load schedules (${escapeHtml(e.message)})</p>`;
+            }
+        }
+
+        function openScheduleModal(s) {
+            editingScheduleId = s ? s.id : null;
+            schedSelection = {};
+            if (s) (s.shifts || []).forEach(sh => { if (sh.templateId != null) schedSelection[sh.dayPosition] = sh.templateId; });
+
+            document.getElementById('sched-modal-title').textContent = s ? 'Edit Repeating Schedule' : 'Add Repeating Schedule';
+            document.getElementById('sched-error').textContent = '';
+            document.getElementById('sched-name').value = s ? s.name : '';
+            document.getElementById('sched-type').value = s ? s.type : 'WEEKLY';
+            document.getElementById('sched-visibility').value = s && s.visibility ? s.visibility : 'PRIVATE';
+            document.getElementById('sched-start').value = s && s.startDate ? s.startDate : dateKey(now.getFullYear(), now.getMonth(), now.getDate());
+            document.getElementById('sched-end').value = s && s.endDate ? s.endDate : '';
+            document.getElementById('sched-cycle').value = s && s.cycleLength ? s.cycleLength : 8;
+            document.getElementById('sched-cycle-group').style.display = s && s.type === 'ROTATION' ? '' : 'none';
+            document.getElementById('sched-delete').style.display = s ? '' : 'none';
+            renderShiftAssignments();
+            schedOverlay.classList.add('show');
+        }
+
+        function renderShiftAssignments() {
+            const type = document.getElementById('sched-type').value;
+            const container = document.getElementById('sched-shifts');
+            const label = document.getElementById('sched-assign-label');
+            let positions;
+            if (type === 'WEEKLY') {
+                label.textContent = 'Shift assignments (per weekday)';
+                positions = WEEKDAYS.map((w, i) => [i, w]);
+            } else {
+                const cycle = Math.min(366, Math.max(1, parseInt(document.getElementById('sched-cycle').value) || 8));
+                label.textContent = 'Shift assignments (per cycle day)';
+                positions = Array.from({ length: cycle }, (_, i) => [i, `Day ${i + 1}`]);
+            }
+            if (shiftTemplates.length === 0) {
+                container.innerHTML = '<p class="text-muted" style="font-size: 0.75rem;">Add a shift template first.</p>';
+                return;
+            }
+            container.innerHTML = positions.map(([pos, name]) => `
+                <div class="shift-row">
+                    <label>${escapeHtml(name)}</label>
+                    <select data-position="${pos}">
+                        <option value="">\u2014 none \u2014</option>
+                        ${shiftTemplates.map(t => `<option value="${t.id}" ${schedSelection[pos] === t.id ? 'selected' : ''}>${escapeHtml(t.name)}</option>`).join('')}
+                    </select>
+                </div>`).join('');
+            container.querySelectorAll('select').forEach(sel => {
+                sel.addEventListener('change', () => {
+                    const pos = parseInt(sel.dataset.position);
+                    if (sel.value) schedSelection[pos] = parseInt(sel.value);
+                    else delete schedSelection[pos];
+                });
+            });
+        }
+
+        async function saveSchedule() {
+            const errEl = document.getElementById('sched-error');
+            errEl.textContent = '';
+            const name = document.getElementById('sched-name').value.trim();
+            const type = document.getElementById('sched-type').value;
+            const start = document.getElementById('sched-start').value;
+            const end = document.getElementById('sched-end').value || null;
+            const cycle = parseInt(document.getElementById('sched-cycle').value);
+
+            if (!name) { errEl.textContent = 'Name is required.'; return; }
+            if (!start) { errEl.textContent = 'Start date is required.'; return; }
+            if (type === 'ROTATION' && (!cycle || cycle < 1 || cycle > 366)) { errEl.textContent = 'Cycle length must be 1-366 days.'; return; }
+
+            const shifts = Object.entries(schedSelection).map(([pos, tplId]) => ({
+                dayPosition: parseInt(pos),
+                templateId: tplId
+            }));
+            if (shifts.length === 0) { errEl.textContent = 'Assign at least one shift template.'; return; }
+
+            const payload = {
+                name,
+                type,
+                visibility: document.getElementById('sched-visibility').value,
+                startDate: start,
+                endDate: end,
+                cycleLength: type === 'ROTATION' ? cycle : null,
+                shifts
+            };
+
+            try {
+                const url = editingScheduleId ? `${API_BASE}/schedules/shifts/${editingScheduleId}` : `${API_BASE}/schedules/shifts`;
+                const response = await fetch(url, {
+                    method: editingScheduleId ? 'PUT' : 'POST',
+                    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (!response.ok) {
+                    const data = await response.json().catch(() => ({}));
+                    throw new Error(data.message || `HTTP ${response.status}`);
+                }
+                schedOverlay.classList.remove('show');
+                await loadShiftSchedules();
+                await loadEvents();
+            } catch (e) {
+                errEl.textContent = e.message;
+            }
+        }
+
+        document.getElementById('tpl-add').addEventListener('click', () => openTemplateModal(null));
+        document.getElementById('tpl-save').addEventListener('click', saveTemplate);
+        document.getElementById('tpl-cancel').addEventListener('click', () => tplOverlay.classList.remove('show'));
+        document.getElementById('tpl-allday').addEventListener('change', (e) => {
+            document.getElementById('tpl-times').style.display = e.target.checked ? 'none' : '';
+        });
+        tplOverlay.addEventListener('click', (e) => { if (e.target === tplOverlay) tplOverlay.classList.remove('show'); });
+
+        document.getElementById('sched-add').addEventListener('click', () => openScheduleModal(null));
+        document.getElementById('sched-save').addEventListener('click', saveSchedule);
+        document.getElementById('sched-cancel').addEventListener('click', () => schedOverlay.classList.remove('show'));
+        document.getElementById('sched-delete').addEventListener('click', async () => {
+            if (!editingScheduleId) return;
+            if (!confirm('Delete this repeating schedule? All of its occurrences disappear.')) return;
+            try {
+                const response = await fetch(`${API_BASE}/schedules/shifts/${editingScheduleId}`, { method: 'DELETE', headers: authHeaders() });
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                schedOverlay.classList.remove('show');
+                await loadShiftSchedules();
+                await loadEvents();
+            } catch (e) {
+                document.getElementById('sched-error').textContent = e.message;
+            }
+        });
+        document.getElementById('sched-type').addEventListener('change', () => {
+            document.getElementById('sched-cycle-group').style.display =
+                document.getElementById('sched-type').value === 'ROTATION' ? '' : 'none';
+            renderShiftAssignments();
+        });
+        document.getElementById('sched-cycle').addEventListener('change', () => {
+            if (document.getElementById('sched-type').value === 'ROTATION') renderShiftAssignments();
+        });
+        schedOverlay.addEventListener('click', (e) => { if (e.target === schedOverlay) schedOverlay.classList.remove('show'); });
+
         loadUserInfo();
         loadEvents();
         loadSharing();
+        loadShiftTemplates();
+        loadShiftSchedules();
 
         document.addEventListener('click', (e) => {
             document.querySelectorAll('details.site-menu[open]').forEach(menu => {

@@ -30,6 +30,8 @@ public class CalendarEventDto {
 
     private boolean allDay;
 
+    private String color;
+
     private CalendarVisibility visibility;
 
     private String ownerUsername;
@@ -37,4 +39,9 @@ public class CalendarEventDto {
     private boolean masked;
 
     private String username;
+
+    // Virtual (recurring-schedule) occurrence fields
+    private boolean virtual;
+    private Long scheduleId;
+    private String occurrenceDate;
 }

@@ -16,6 +16,13 @@ function CalendarModule(config, container, moduleRef) {
         .calendar-cell.is-today .cal-day-num { color: var(--primary-color); font-weight: 700; }
         .cal-event { font-size: 0.6rem; padding: 1px 3px; border-radius: 3px; background: var(--primary-color); color: var(--text-on-primary); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
         .cal-event.allday { background: var(--success-color, #27ae60); }
+
+        .cal-color-row { display: flex; gap: 6px; flex-wrap: wrap; }
+        .cal-color-swatch { width: 22px; height: 22px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; transition: transform 0.1s, border-color 0.1s; }
+        .cal-color-swatch:hover { transform: scale(1.15); }
+        .cal-color-swatch.selected { border-color: var(--text-primary); box-shadow: 0 0 0 2px var(--bg-secondary, #fff); }
+        .cal-color-none { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; border: 1px dashed var(--border-color); cursor: pointer; color: var(--text-secondary); font-size: 12px; line-height: 1; }
+
         .cal-event.busy { background: var(--text-muted, #999); opacity: 0.55; cursor: default; }
         .calendar-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 0.5rem; gap: 0.5rem; }
         .cal-filter-select { font-size: 0.75rem; padding: 0.25rem 0.4rem; border: 1px solid var(--input-border); border-radius: var(--radius); background: var(--input-bg); color: var(--text-primary); }
@@ -87,6 +94,10 @@ function CalendarModule(config, container, moduleRef) {
                         <label for="cal-ev-desc">Description</label>
                         <textarea id="cal-ev-desc" rows="3" maxlength="2000"></textarea>
                     </div>
+                    <div class="form-group">
+                        <label>Color</label>
+                        <div class="cal-color-row" id="cal-ev-colors"></div>
+                    </div>
                     <div class="cal-error" id="cal-error"></div>
                     <div class="cal-modal-actions">
                         <button id="cal-ev-delete" class="btn btn-danger btn-sm" style="margin-right: auto; display: none;">Delete</button>
@@ -116,6 +127,63 @@ function CalendarModule(config, container, moduleRef) {
     const today = new Date();
     let viewYear = today.getFullYear();
     let viewMonth = today.getMonth(); // 0-based
+
+    const EVENT_COLORS = ['#c0392b', '#d35400', '#8e44ad', '#1a5276', '#148f77', '#1e8449', '#2c3e50', '#607d8b'];
+    const CATEGORY_BORDER = { PRIVATE: '#7f8c8d', WORK: '#8e44ad', PUBLIC: '#27ae60' };
+    let selectedColor = null;
+
+    function applyEventColors(pill, ev) {
+        if (ev.color) {
+            pill.style.background = ev.color;
+        }
+        const category = (ev.visibility || '').toUpperCase();
+        if (CATEGORY_BORDER[category]) {
+            pill.style.borderColor = CATEGORY_BORDER[category];
+        }
+    }
+
+    async function excludeOccurrence(ev) {
+        try {
+            const response = await fetch(`${API_BASE}/schedules/shifts/${ev.scheduleId}/occurrence/${ev.startAt.slice(0, 10)}`, {
+                method: 'DELETE',
+                headers: authHeaders()
+            });
+            if (!response.ok) {
+                const data = await response.json().catch(() => ({}));
+                throw new Error(data.message || `HTTP ${response.status}`);
+            }
+            document.dispatchEvent(new CustomEvent('calendar:updated'));
+        } catch (e) {
+            console.error('Failed to delete occurrence:', e);
+        }
+    }
+
+    function renderColorSwatches() {
+        const row = overlay.querySelector('#cal-ev-colors');
+        row.innerHTML = '<span class="cal-color-none" title="Default color">✕</span>' +
+            EVENT_COLORS.map(c => `<span class="cal-color-swatch" data-color="${c}" style="background:${c}"></span>`).join('');
+        row.querySelectorAll('.cal-color-swatch').forEach(sw => {
+            sw.addEventListener('click', (e) => {
+                e.stopPropagation();
+                selectedColor = sw.dataset.color;
+                row.querySelectorAll('.cal-color-swatch').forEach(x => x.classList.toggle('selected', x === sw));
+                const none = row.querySelector('.cal-color-none');
+                none && none.classList.remove('selected');
+            });
+        });
+        row.querySelector('.cal-color-none').addEventListener('click', (e) => {
+            e.stopPropagation();
+            selectedColor = null;
+            row.querySelectorAll('.cal-color-swatch').forEach(x => x.classList.remove('selected'));
+        });
+    }
+
+    function setColorSelection(color) {
+        selectedColor = color || null;
+        const row = overlay.querySelector('#cal-ev-colors');
+        row.querySelectorAll('.cal-color-swatch').forEach(x =>
+            x.classList.toggle('selected', !!selectedColor && x.dataset.color === selectedColor));
+    }
 
     let events = [];
     let editingId = null;
@@ -226,12 +294,32 @@ function CalendarModule(config, container, moduleRef) {
                     div.appendChild(pill);
                     return;
                 }
+                if (ev.virtual) {
+                    const pill = document.createElement('div');
+                    pill.className = 'cal-event' + (ev.allDay ? ' allday' : '');
+                    pill.textContent = ev.title;
+                    pill.title = `${ev.title} — repeating schedule (click to delete this occurrence)`;
+                    if (!ev.ownerUsername) {
+                        pill.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            if (confirm(`Delete "${ev.title}" on this day?\nOnly this occurrence is removed — the repeating pattern itself stays.`)) {
+                                excludeOccurrence(ev);
+                            }
+                        });
+                    } else {
+                        pill.addEventListener('click', (e) => e.stopPropagation());
+                    }
+                    applyEventColors(pill, ev);
+                    div.appendChild(pill);
+                    return;
+                }
                 if (ev.ownerUsername) {
                     const pill = document.createElement('div');
                     pill.className = 'cal-event' + (ev.allDay ? ' allday' : '');
                     pill.textContent = ev.title;
                     pill.title = `${ev.title} (shared by @${ev.ownerUsername})`;
                     pill.addEventListener('click', (e) => e.stopPropagation());
+                    applyEventColors(pill, ev);
                     div.appendChild(pill);
                     return;
                 }
@@ -243,6 +331,7 @@ function CalendarModule(config, container, moduleRef) {
                     e.stopPropagation();
                     openModal(ev);
                 });
+                applyEventColors(pill, ev);
                 div.appendChild(pill);
             });
 
@@ -265,6 +354,7 @@ function CalendarModule(config, container, moduleRef) {
         overlay.querySelector('#cal-ev-allday').checked = ev ? ev.allDay : false;
         overlay.querySelector('#cal-ev-start').value = startDateTime;
         overlay.querySelector('#cal-ev-end').value = endDateTime;
+        setColorSelection(ev ? ev.color : null);
 
         deleteBtn.style.display = ev ? '' : 'none';
         overlay.classList.add('show');
@@ -290,6 +380,7 @@ function CalendarModule(config, container, moduleRef) {
             description: overlay.querySelector('#cal-ev-desc').value.trim() || null,
             location: overlay.querySelector('#cal-ev-location').value.trim() || null,
             allDay,
+            color: selectedColor || null,
             startAt: allDay ? startInput.slice(0, 10) + 'T00:00' : startInput,
             endAt: allDay ? endInput.slice(0, 10) + 'T23:59' : endInput
         };
@@ -356,6 +447,8 @@ function CalendarModule(config, container, moduleRef) {
         render();
     });
     deleteBtn.addEventListener('click', deleteEvent);
+
+    renderColorSwatches();
     overlay.querySelector('#cal-ev-save').addEventListener('click', saveEvent);
     overlay.querySelector('#cal-ev-cancel').addEventListener('click', closeModal);
 
