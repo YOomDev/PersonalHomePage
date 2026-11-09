@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ypeoomes.DTO.AuthRequest;
 import com.ypeoomes.DTO.AuthResponse;
 import com.ypeoomes.DTO.LoginRequest;
+import com.ypeoomes.DTO.RefreshTokenRequest;
 import com.ypeoomes.DTO.UserPreferencesRequest;
 import com.ypeoomes.DTO.UserPreferencesResponse;
 import com.ypeoomes.Entities.User;
@@ -44,8 +45,8 @@ public class AuthController {
     }
 
     @PostMapping("/refresh")
-    public ResponseEntity<AuthResponse> refresh(@RequestParam String refreshToken) {
-        AuthResponse response = authService.refreshToken(refreshToken);
+    public ResponseEntity<AuthResponse> refresh(@Valid @RequestBody RefreshTokenRequest request) {
+        AuthResponse response = authService.refreshToken(request.getRefreshToken());
         return ResponseEntity.ok(response);
     }
 
@@ -70,7 +71,7 @@ public class AuthController {
 
     @PutMapping("/preferences")
     public ResponseEntity<UserPreferencesResponse> updatePreferences(@AuthenticationPrincipal User user, @Valid @RequestBody UserPreferencesRequest request) {
-        user.setTheme(request.getTheme());
+        authService.updatePreferences(user, request.getTheme());
         return ResponseEntity.ok(UserPreferencesResponse.builder()
                 .theme(user.getTheme())
                 .build());

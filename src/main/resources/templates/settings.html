@@ -150,6 +150,47 @@
         let editingModuleId = null;
         let defaultModel = null;
 
+        async function refreshToken() {
+            const refreshToken = localStorage.getItem('refreshToken');
+            if (!refreshToken) throw new Error('No refresh token');
+
+            const response = await fetch(`${API_BASE}/auth/refresh`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ refreshToken })
+            });
+            if (!response.ok) throw new Error('Refresh failed');
+
+            const data = await response.json();
+            localStorage.setItem('authToken', data.accessToken);
+            localStorage.setItem('refreshToken', data.refreshToken);
+            authToken = data.accessToken;
+        }
+
+        function promptLogin() {
+            localStorage.removeItem('authToken');
+            localStorage.removeItem('refreshToken');
+            window.location.href = '/login';
+        }
+
+        // Fetch wrapper: attaches the bearer token and retries once after a
+        // token refresh when the access token has expired.
+        async function authedFetch(url, options = {}) {
+            options.headers = { ...(options.headers || {}), 'Authorization': `Bearer ${authToken}` };
+            let response = await fetch(url, options);
+            if (response.status === 401) {
+                try {
+                    await refreshToken();
+                    options.headers['Authorization'] = `Bearer ${authToken}`;
+                    response = await fetch(url, options);
+                } catch (e) {
+                    promptLogin();
+                    throw new Error('Session expired, please log in again');
+                }
+            }
+            return response;
+        }
+
         // Apply theme immediately on page load
         function applyTheme(theme) {
             const root = document.documentElement;
@@ -168,9 +209,7 @@
         async function fetchModules() {
             if (!authToken) return [];
             try {
-                const response = await fetch(`${API_BASE}/modules`, {
-                    headers: { 'Authorization': `Bearer ${authToken}` }
-                });
+                const response = await authedFetch(`${API_BASE}/modules`);
                 if (!response.ok) throw new Error('Failed to fetch modules');
                 return await response.json();
             } catch (e) {
@@ -291,9 +330,7 @@
             }
             
             try {
-                const response = await fetch(`${API_BASE}/auth/ollama/models`, {
-                    headers: { 'Authorization': `Bearer ${authToken}` }
-                });
+                const response = await authedFetch(`${API_BASE}/auth/ollama/models`);
                 if (response.ok) {
                     const data = await response.json();
                     const models = data.models || [];
@@ -362,12 +399,9 @@
                 const url = id ? `${API_BASE}/modules/${id}` : `${API_BASE}/modules`;
                 const method = id ? 'PUT' : 'POST';
                 
-                const response = await fetch(url, {
+                const response = await authedFetch(url, {
                     method,
-                    headers: { 
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${authToken}`
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(dto)
                 });
 
@@ -387,9 +421,8 @@
             if (!confirm('Are you sure you want to delete this module?')) return;
             
             try {
-                const response = await fetch(`${API_BASE}/modules/${id}`, {
-                    method: 'DELETE',
-                    headers: { 'Authorization': `Bearer ${authToken}` }
+                const response = await authedFetch(`${API_BASE}/modules/${id}`, {
+                    method: 'DELETE'
                 });
                 
                 if (!response.ok) throw new Error('Failed to delete module');
@@ -422,9 +455,7 @@
 
         async function loadUserInfo() {
             try {
-                const response = await fetch(`${API_BASE}/auth/me`, {
-                    headers: { 'Authorization': `Bearer ${authToken}` }
-                });
+                const response = await authedFetch(`${API_BASE}/auth/me`);
                 if (response.ok) {
                     const userInfo = await response.json();
                     document.getElementById('username-display').textContent = userInfo.username;
@@ -446,12 +477,9 @@
 
         async function updateTheme(theme) {
             try {
-                const response = await fetch(`${API_BASE}/auth/preferences`, {
+                const response = await authedFetch(`${API_BASE}/auth/preferences`, {
                     method: 'PUT',
-                    headers: { 
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${authToken}`
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ theme })
                 });
                 if (!response.ok) throw new Error('Failed to update theme');

@@ -65,6 +65,11 @@ public class AuthService {
         return buildAuthResponse((User) userDetails);
     }
 
+    public void updatePreferences(User user, String theme) {
+        user.setTheme(theme);
+        userRepository.save(user);
+    }
+
     private AuthResponse buildAuthResponse(User user) {
         String accessToken = jwtService.generateToken(user);
         String refreshToken = jwtService.generateRefreshToken(user);
