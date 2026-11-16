@@ -112,7 +112,26 @@ function OllamaModule(config, container) {
         const contentDiv = assistantMsg.querySelector('div');
         setLoading(true);
 
+        var idleTimer = null;
         try {
+            // Idle-based timeout: abort only when no bytes arrive for a while, not
+            // after a fixed total time. The first-byte window is generous (at least
+            // 2 minutes) to cover model loading/swap and prompt processing, where
+            // nothing streams yet; afterwards the timer resets on every received
+            // chunk. With stream off no bytes arrive until generation finishes, so
+            // a plain generous total timeout is used instead.
+            var firstByteTimeout = Math.max(timeout, 120000);
+            var idleTimeout = Math.max(timeout, 30000);
+            var totalTimeout = Math.max(timeout, 300000);
+            var controller = new AbortController();
+            var abortIdle = function() {
+                controller.abort(new DOMException('Request timed out - no response data received', 'TimeoutError'));
+            };
+            var bumpIdle = function() {
+                clearTimeout(idleTimer);
+                idleTimer = setTimeout(abortIdle, idleTimeout);
+            };
+
             const response = await fetch(baseUrl + '/api/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -128,7 +147,7 @@ function OllamaModule(config, container) {
                         num_predict: maxTokens
                     }
                 }),
-                signal: AbortSignal.timeout(timeout)
+                signal: controller.signal
             });
 
             if (!response.ok) {
@@ -139,6 +158,7 @@ function OllamaModule(config, container) {
             var meta = '';
 
             if (streaming) {
+                idleTimer = setTimeout(abortIdle, firstByteTimeout);
                 let content = '';
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
@@ -147,6 +167,7 @@ function OllamaModule(config, container) {
                 while (true) {
                     const { done, value } = await reader.read();
                     if (done) break;
+                    bumpIdle();
                     buffer += decoder.decode(value, { stream: true });
 
                     let nl;
@@ -161,6 +182,8 @@ function OllamaModule(config, container) {
                         } catch (err) {
                             continue;
                         }
+
+                        if (chunk.error) throw new Error(chunk.error);
 
                         if (chunk.message && chunk.message.content) {
                             content += chunk.message.content;
@@ -177,6 +200,7 @@ function OllamaModule(config, container) {
 
                 assistantMsg.innerHTML = '<div>' + escapeHtml(content) + '</div><div class="meta">Assistant \u00b7 ' + formatTime() + (meta ? ' \u00b7 ' + meta : '') + '</div>';
             } else {
+                idleTimer = setTimeout(abortIdle, totalTimeout);
                 const data = await response.json();
                 const content = data.message && data.message.content ? data.message.content : 'No response';
 
@@ -193,6 +217,7 @@ function OllamaModule(config, container) {
             assistantMsg.className = 'ollama-message error';
             assistantMsg.innerHTML = '<div>' + escapeHtml(errorMsg) + '</div><div class="meta">Error \u00b7 ' + formatTime() + '</div>';
         } finally {
+            clearTimeout(idleTimer);
             setLoading(false);
         }
     }

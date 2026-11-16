@@ -271,7 +271,26 @@
             const messages = [{ role: 'system', content: settings.systemPrompt }, ...chatHistory];
             const streaming = activeStream();
 
+            let idleTimer = null;
             try {
+                // Idle-based timeout: the request is killed only when no bytes arrive
+                // for a while, not after a fixed total time. The first-byte window is
+                // generous (module timeout, but at least 2 minutes) to cover model
+                // loading/swap and prompt processing, where nothing streams yet;
+                // afterwards the timer resets on every received chunk. With stream
+                // off no bytes arrive until generation finishes, so a plain generous
+                // total timeout is used instead.
+                const firstByteTimeout = Math.max(sessionSettings.timeout, 120000);
+                const idleTimeout = Math.max(sessionSettings.timeout, 30000);
+                const totalTimeout = Math.max(sessionSettings.timeout, 300000);
+                const controller = new AbortController();
+                const abortIdle = () => controller.abort(
+                    new DOMException('Request timed out - no response data received', 'TimeoutError'));
+                const bumpIdle = () => {
+                    clearTimeout(idleTimer);
+                    idleTimer = setTimeout(abortIdle, idleTimeout);
+                };
+
                 const response = await fetch(sessionSettings.baseUrl + '/api/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -281,7 +300,7 @@
                         stream: streaming,
                         options: { temperature: settings.temperature, num_predict: settings.maxTokens }
                     }),
-                    signal: AbortSignal.timeout(sessionSettings.timeout)
+                    signal: controller.signal
                 });
 
                 if (response.status === 401 && response.url && response.url.includes('/api')) {
@@ -296,12 +315,14 @@
                 let meta = '';
 
                 if (streaming) {
+                    idleTimer = setTimeout(abortIdle, firstByteTimeout);
                     const reader = response.body.getReader();
                     const decoder = new TextDecoder();
                     let buffer = '';
                     while (true) {
                         const { done, value } = await reader.read();
                         if (done) break;
+                        bumpIdle();
                         buffer += decoder.decode(value, { stream: true });
                         let nl;
                         while ((nl = buffer.indexOf('\n')) !== -1) {
@@ -310,6 +331,7 @@
                             if (!line) continue;
                             let chunk;
                             try { chunk = JSON.parse(line); } catch (e) { continue; }
+                            if (chunk.error) throw new Error(chunk.error);
                             if (chunk.message && chunk.message.content) {
                                 content += chunk.message.content;
                                 contentDiv.innerHTML = escapeHtml(content);
@@ -322,6 +344,7 @@
                         }
                     }
                 } else {
+                    idleTimer = setTimeout(abortIdle, totalTimeout);
                     const data = await response.json();
                     content = data.message && data.message.content ? data.message.content : 'No response';
                     if (data.eval_count) meta += data.eval_count + ' tokens';
@@ -340,6 +363,7 @@
                 assistantMsg.remove();
                 addMessage('error', reason, '');
             } finally {
+                clearTimeout(idleTimer);
                 setLoading(false);
             }
         }
