@@ -52,11 +52,23 @@ public class OllamaAdminService {
         return requestJson("DELETE", "/api/delete", body("model", model));
     }
 
-    /** POST /api/generate with no prompt — loads the model into memory; keep_alive null keeps the server default (5m). */
+    /**
+     * POST /api/generate with no prompt — loads the model into memory.
+     * keepAlive may be a duration string ("5m", "1h"), a plain integer in seconds
+     * (e.g. "-1" = keep until unloaded, sent as a JSON number since Ollama's duration
+     * parser only accepts strings like "5m"), or null (server default, 5 minutes).
+     */
     public Object preloadModel(String model, String keepAlive) {
-        String body = keepAlive != null && !keepAlive.isBlank()
-                ? "{\"model\":\"" + escape(model) + "\",\"stream\":true,\"keep_alive\":\"" + escape(keepAlive) + "\"}"
-                : "{\"model\":\"" + escape(model) + "\",\"stream\":true}";
+        String body;
+        if (keepAlive != null && !keepAlive.isBlank()) {
+            String trimmed = keepAlive.trim();
+            String keepJson = trimmed.matches("-?\\d+")
+                    ? trimmed
+                    : "\"" + escape(trimmed) + "\"";
+            body = "{\"model\":\"" + escape(model) + "\",\"stream\":true,\"keep_alive\":" + keepJson + "}";
+        } else {
+            body = "{\"model\":\"" + escape(model) + "\",\"stream\":true}";
+        }
         return streamToLast("/api/generate", body);
     }
 
