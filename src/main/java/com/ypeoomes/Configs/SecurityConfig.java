@@ -34,7 +34,7 @@ public class SecurityConfig {
         http
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/", "/settings", "/calendar", "/chat", "/auth/**", "/api/auth/**", "/login", "/register", "/css/**", "/js/**", "/modules/**", "/webjars/**", "/favicon.ico").permitAll()
+                        .requestMatchers("/", "/settings", "/calendar", "/chat", "/admin", "/auth/**", "/api/auth/**", "/login", "/register", "/css/**", "/js/**", "/modules/**", "/webjars/**", "/favicon.ico").permitAll()
                         .requestMatchers("/actuator/**").permitAll()
                         .anyRequest().authenticated()
                 )

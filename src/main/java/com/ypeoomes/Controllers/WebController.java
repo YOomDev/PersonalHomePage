@@ -42,4 +42,10 @@ public class WebController {
         model.addAttribute("user", user);
         return "chat";
     }
+
+    @GetMapping("/admin")
+    public String admin(@AuthenticationPrincipal User user, Model model) {
+        model.addAttribute("user", user);
+        return "admin";
+    }
 }

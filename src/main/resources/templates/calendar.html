@@ -92,6 +92,7 @@
                 <a href="/">Home</a>
                 <a href="/calendar" class="active">Calendar</a>
                 <a href="/chat">Private AI Chat</a>
+                <a href="/admin" id="nav-admin-link" style="display: none;">Ollama Admin</a>
             </div>
         </details>
         <div class="user-info">
@@ -826,6 +827,8 @@
                         applyTheme(userInfo.theme);
                         localStorage.setItem('theme', userInfo.theme);
                     }
+                    const adminLink = document.getElementById('nav-admin-link');
+                    if (adminLink) adminLink.style.display = (userInfo.roles || []).includes('ROLE_ADMIN') ? '' : 'none';
                 }
             } catch (e) {
                 console.error('Failed to load user info:', e);

@@ -28,3 +28,7 @@ ollama:
   base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
   model: ${OLLAMA_MODEL:gemma3:4b-it-qat}
   timeout: 120000
+
+app:
+  admin:
+    username: ${ADMIN_USERNAME:}

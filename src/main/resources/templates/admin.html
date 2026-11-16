@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="https://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ollama Admin - Personal Homepage</title>
+    <link rel="icon" type="image/x-icon" th:href="@{/favicon.ico}">
+    <link rel="stylesheet" th:href="@{/css/main.css}">
+    <style>
+        .admin-page { max-width: 900px; margin: 0 auto; }
+        .admin-toolbar { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem; }
+        .admin-toolbar h2 { margin: 0; flex: 1; }
+        .admin-section { background: var(--bg-secondary, var(--bg-primary)); border-radius: var(--radius-lg); padding: 1rem 1.25rem; margin-bottom: 1rem; }
+        .admin-section h3 { margin: 0 0 0.75rem; font-size: 1rem; color: var(--text-primary); }
+        .admin-row { display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem 0.75rem; background: var(--bg-tertiary); border-radius: var(--radius); margin-bottom: 0.4rem; font-size: 0.875rem; }
+        .admin-row .info { flex: 1; min-width: 0; }
+        .admin-row .name { color: var(--text-primary); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .admin-row .sub { font-size: 0.72rem; color: var(--text-secondary); }
+        .admin-row .actions { display: flex; gap: 0.3rem; flex: none; }
+        .admin-empty { color: var(--text-muted); font-size: 0.8125rem; padding: 0.5rem 0; }
+        .pull-row { display: flex; gap: 0.5rem; }
+        .pull-row input { flex: 1; padding: 0.5rem 0.75rem; border: 1px solid var(--input-border); border-radius: var(--radius); background: var(--input-bg); color: var(--text-primary); font-family: inherit; font-size: 0.875rem; box-sizing: border-box; }
+        .pull-progress { margin-top: 0.75rem; }
+        .pull-status { font-size: 0.8125rem; color: var(--text-secondary); margin-bottom: 0.35rem; min-height: 1.2em; }
+        .pull-bar { height: 10px; background: var(--bg-tertiary); border-radius: 999px; overflow: hidden; display: none; }
+        .pull-bar-fill { height: 100%; background: var(--primary-color); width: 0%; transition: width 0.3s; }
+        .pull-error { color: var(--danger-color); font-size: 0.8125rem; margin-top: 0.5rem; min-height: 1em; }
+        .admin-note { font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem; }
+        .not-authorized { text-align: center; padding: 3rem 1rem; color: var(--text-muted); }
+        .busy-btn { opacity: 0.6; pointer-events: none; }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <details class="site-menu">
+            <summary title="Go to pages">
+                <h1>Personal Homepage</h1>
+                <span class="site-menu-caret">&#9662;</span>
+            </summary>
+            <div class="site-menu-list">
+                <a href="/">Home</a>
+                <a href="/calendar">Calendar</a>
+                <a href="/chat">Private AI Chat</a>
+                <a href="/admin" class="active">Ollama Admin</a>
+            </div>
+        </details>
+        <div class="user-info">
+            <span id="username-display">Guest</span>
+            <a href="/" class="btn btn-secondary">Back to Home</a>
+            <button class="btn btn-secondary" onclick="logout()">Logout</button>
+        </div>
+    </header>
+
+    <div class="container admin-page">
+        <div id="not-authorized" class="not-authorized" style="display: none;">
+            <h3>Not authorized</h3>
+            <p>Your account does not have the admin role.</p>
+            <a href="/" class="btn btn-secondary">Back to Home</a>
+        </div>
+
+        <div id="admin-content" style="display: none;">
+            <div class="admin-toolbar">
+                <h2>Ollama Administration</h2>
+                <button id="refresh-btn" class="btn btn-secondary btn-sm">Refresh</button>
+            </div>
+
+            <div class="admin-section">
+                <h3>Running (loaded in memory)</h3>
+                <div id="running-list"></div>
+            </div>
+
+            <div class="admin-section">
+                <h3>Installed models</h3>
+                <div id="models-list"></div>
+            </div>
+
+            <div class="admin-section">
+                <h3>Pull a model</h3>
+                <div class="pull-row">
+                    <input type="text" id="pull-model" placeholder="e.g. llama3.2:8b or hf.co/user/repo:Q4_K_M" autocomplete="off">
+                    <button id="pull-btn" class="btn btn-primary">Pull</button>
+                </div>
+                <div class="pull-progress">
+                    <div class="pull-status" id="pull-status"></div>
+                    <div class="pull-bar" id="pull-bar"><div class="pull-bar-fill" id="pull-bar-fill"></div></div>
+                </div>
+                <div class="pull-error" id="pull-error"></div>
+                <p class="admin-note">Downloads resume automatically if interrupted. Preloading keeps a model in memory (default keep-alive 5 minutes; unload frees it immediately).</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '/api';
+        if (!localStorage.getItem('authToken')) {
+            window.location.href = '/login';
+        }
+
+        function applyTheme(theme) {
+            const root = document.documentElement;
+            if (theme === 'auto' || !theme) root.removeAttribute('data-theme');
+            else root.setAttribute('data-theme', theme);
+        }
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme) applyTheme(savedTheme);
+
+        function logout() {
+            localStorage.removeItem('authToken');
+            localStorage.removeItem('refreshToken');
+            localStorage.removeItem('homepage_modules_cache');
+            window.location.href = '/login';
+        }
+
+        const authHeaders = () => ({ 'Authorization': `Bearer ${localStorage.getItem('authToken')}` });
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text == null ? '' : String(text);
+            return div.innerHTML;
+        }
+
+        function humanSize(bytes) {
+            if (bytes == null || isNaN(bytes)) return '';
+            const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+            let i = 0, v = bytes;
+            while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+            return `${v.toFixed(v >= 10 || i === 0 ? 0 : 1)} ${units[i]}`;
+        }
+
+        function shortDate(iso) {
+            const d = new Date(iso);
+            if (isNaN(d)) return '';
+            return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`;
+        }
+
+        function expiresText(iso) {
+            const ms = new Date(iso).getTime() - Date.now();
+            if (isNaN(ms)) return '';
+            if (ms <= 0) return 'unloading';
+            const mins = Math.ceil(ms / 60000);
+            if (mins < 60) return `unloads in ~${mins} min`;
+            return `unloads in ~${Math.round(mins / 60)} h`;
+        }
+
+        async function refreshToken() {
+            const refreshToken = localStorage.getItem('refreshToken');
+            if (!refreshToken) throw new Error('No refresh token');
+            const response = await fetch(`${API_BASE}/auth/refresh`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ refreshToken })
+            });
+            if (!response.ok) throw new Error('Refresh failed');
+            const data = await response.json();
+            localStorage.setItem('authToken', data.accessToken);
+            localStorage.setItem('refreshToken', data.refreshToken);
+        }
+
+        function promptLogin() {
+            localStorage.removeItem('authToken');
+            localStorage.removeItem('refreshToken');
+            window.location.href = '/login';
+        }
+
+        const runningList = document.getElementById('running-list');
+        const modelsList = document.getElementById('models-list');
+        let isAdmin = false;
+
+        async function adminApi(url, options = {}) {
+            options.headers = { ...(options.headers || {}), ...authHeaders() };
+            if (options.body && !options.headers['Content-Type']) {
+                options.headers['Content-Type'] = 'application/json';
+            }
+            let response = await fetch(url, options);
+            if (response.status === 401) {
+                try {
+                    await refreshToken();
+                    options.headers['Authorization'] = `Bearer ${localStorage.getItem('authToken')}`;
+                    response = await fetch(url, options);
+                } catch (e) {
+                    promptLogin();
+                    throw new Error('Session expired');
+                }
+            }
+            return response;
+        }
+
+        async function loadRunning() {
+            try {
+                const response = await adminApi(`${API_BASE}/admin/ollama/running`);
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const data = await response.json();
+                const models = data.models || [];
+                runningList.innerHTML = '';
+                if (models.length === 0) {
+                    runningList.innerHTML = '<div class="admin-empty">Nothing loaded into memory right now.</div>';
+                    return;
+                }
+                models.forEach(m => {
+                    const row = document.createElement('div');
+                    row.className = 'admin-row';
+                    row.innerHTML = `
+                        <div class="info">
+                            <div class="name" title="${escapeHtml(m.model)}">${escapeHtml(m.model)}</div>
+                            <div class="sub">${humanSize(m.size)} in memory${m.size_vram ? ` (${humanSize(m.size_vram)} VRAM)` : ''} \u00b7 ${escapeHtml(expiresText(m.expires_at))}</div>
+                        </div>
+                        <div class="actions">
+                            <button class="btn btn-secondary btn-sm unload-btn">Unload</button>
+                        </div>`;
+                    row.querySelector('.unload-btn').addEventListener('click', () => unload(m.model, row.querySelector('.unload-btn')));
+                    runningList.appendChild(row);
+                });
+            } catch (e) {
+                runningList.innerHTML = `<div class="admin-empty">Failed to load (${escapeHtml(e.message)})</div>`;
+            }
+        }
+
+        async function loadModels() {
+            try {
+                const response = await adminApi(`${API_BASE}/admin/ollama/models`);
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const data = await response.json();
+                if (data.error) throw new Error(data.error);
+                const models = data.models || [];
+                modelsList.innerHTML = '';
+                if (models.length === 0) {
+                    modelsList.innerHTML = '<div class="admin-empty">No models installed.</div>';
+                    return;
+                }
+                let running;
+                try {
+                    const r = await adminApi(`${API_BASE}/admin/ollama/running`);
+                    running = r.ok ? ((await r.json()).models || []).map(m => m.model) : [];
+                } catch (e) { running = []; }
+                const runningSet = new Set(running);
+
+                models.forEach(m => {
+                    const row = document.createElement('div');
+                    row.className = 'admin-row';
+                    const d = m.details || {};
+                    row.innerHTML = `
+                        <div class="info">
+                            <div class="name" title="${escapeHtml(m.model)}">${escapeHtml(m.model)}</div>
+                            <div class="sub">${humanSize(m.size)} \u00b7 ${escapeHtml(d.parameter_size || '?')} params \u00b7 ${escapeHtml(d.quantization_level || '?')} \u00b7 updated ${shortDate(m.modified_at)}</div>
+                        </div>
+                        <div class="actions">
+                            ${runningSet.has(m.model)
+                                ? `<button class="btn btn-secondary btn-sm unload-btn">Unload</button>`
+                                : `<button class="btn btn-secondary btn-sm preload-btn">Preload</button>`}
+                            <button class="btn btn-danger btn-sm delete-btn">Delete</button>
+                        </div>`;
+                    const unloadBtn = row.querySelector('.unload-btn');
+                    if (unloadBtn) {
+                        unloadBtn.addEventListener('click', () => unload(m.model, unloadBtn));
+                    } else {
+                        row.querySelector('.preload-btn').addEventListener('click', (e) => preload(m.model, e.target));
+                    }
+                    row.querySelector('.delete-btn').addEventListener('click', () => deleteModel(m.model, row.querySelector('.delete-btn')));
+                    modelsList.appendChild(row);
+                });
+            } catch (e) {
+                modelsList.innerHTML = `<div class="admin-empty">Failed to load (${escapeHtml(e.message)})</div>`;
+            }
+        }
+
+        function setBtnBusy(btn, busy) {
+            if (!btn) return;
+            btn.classList.toggle('busy-btn', !!busy);
+        }
+
+        async function preload(model, btn) {
+            setBtnBusy(btn, true);
+            try {
+                const response = await adminApi(`${API_BASE}/admin/ollama/preload`, {
+                    method: 'POST',
+                    body: JSON.stringify({ model })
+                });
+                const data = await response.json().catch(() => ({}));
+                if (data.error) throw new Error(data.error);
+                await Promise.all([loadModels(), loadRunning()]);
+            } catch (e) {
+                alert(`Preload failed: ${e.message}`);
+            } finally {
+                setBtnBusy(btn, false);
+            }
+        }
+
+        async function unload(model, btn) {
+            setBtnBusy(btn, true);
+            try {
+                const response = await adminApi(`${API_BASE}/admin/ollama/unload`, {
+                    method: 'POST',
+                    body: JSON.stringify({ model })
+                });
+                const data = await response.json().catch(() => ({}));
+                if (data.error) throw new Error(data.error);
+                await Promise.all([loadModels(), loadRunning()]);
+            } catch (e) {
+                alert(`Unload failed: ${e.message}`);
+            } finally {
+                setBtnBusy(btn, false);
+            }
+        }
+
+        async function deleteModel(model, btn) {
+            if (!confirm(`Delete "${model}"?\nThis permanently removes the model data from the server.`)) return;
+            setBtnBusy(btn, true);
+            try {
+                const response = await adminApi(`${API_BASE}/admin/ollama/models`, {
+                    method: 'DELETE',
+                    body: JSON.stringify({ model })
+                });
+                const data = await response.json().catch(() => ({}));
+                if (data.error) throw new Error(data.error);
+                await Promise.all([loadModels(), loadRunning()]);
+            } catch (e) {
+                alert(`Delete failed: ${e.message}`);
+            } finally {
+                setBtnBusy(btn, false);
+            }
+        }
+
+        // ---------- Pull with live progress ----------
+
+        const pullInput = document.getElementById('pull-model');
+        const pullBtn = document.getElementById('pull-btn');
+        const pullStatus = document.getElementById('pull-status');
+        const pullBar = document.getElementById('pull-bar');
+        const pullBarFill = document.getElementById('pull-bar-fill');
+        const pullError = document.getElementById('pull-error');
+        let pulling = false;
+
+        async function pullModel() {
+            const model = pullInput.value.trim();
+            pullError.textContent = '';
+            if (!model) { pullError.textContent = 'Enter a model name.'; return; }
+            if (pulling) return;
+
+            pulling = true;
+            pullBtn.classList.add('busy-btn');
+            pullStatus.textContent = 'Starting pull...';
+            pullBar.style.display = 'none';
+            pullBarFill.style.width = '0%';
+
+            const layers = {}; // digest -> {total, completed}
+
+            const updateBar = () => {
+                let total = 0, completed = 0;
+                for (const l of Object.values(layers)) {
+                    if (l.total) { total += l.total; completed += Math.min(l.completed || 0, l.total); }
+                }
+                if (total > 0) {
+                    pullBar.style.display = '';
+                    pullBarFill.style.width = `${Math.round((completed / total) * 100)}%`;
+                    return `${humanSize(completed)} / ${humanSize(total)}`;
+                }
+                return '';
+            };
+
+            try {
+                const response = await fetch(`${API_BASE}/admin/ollama/pull`, {
+                    method: 'POST',
+                    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ model })
+                });
+                if (response.status === 403) { pullError.textContent = 'You need the admin role for this.'; return; }
+                if (response.status === 401) { try { await refreshToken(); return pullModel(); } catch (e) { return promptLogin(); } }
+                if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`);
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                let done = false;
+                while (!done) {
+                    const { done: streamDone, value } = await reader.read();
+                    if (streamDone) break;
+                    buffer += decoder.decode(value, { stream: true });
+                    let nl;
+                    while ((nl = buffer.indexOf('\n')) !== -1) {
+                        const line = buffer.slice(0, nl).trim();
+                        buffer = buffer.slice(nl + 1);
+                        if (!line) continue;
+                        let chunk;
+                        try { chunk = JSON.parse(line); } catch (e) { continue; }
+
+                        if (chunk.error) { pullError.textContent = chunk.error; done = true; break; }
+                        if (chunk.digest && chunk.total) {
+                            layers[chunk.digest] = layers[chunk.digest] || { total: chunk.total, completed: 0 };
+                            if (chunk.completed != null) layers[chunk.digest].completed = chunk.completed;
+                        }
+                        const sizeText = updateBar();
+                        pullStatus.textContent = (chunk.status || 'Pulling...') + (sizeText ? ` \u2014 ${sizeText}` : '');
+                        if (chunk.status === 'success') done = true;
+                    }
+                }
+                pullStatus.textContent = pullError.textContent ? pullStatus.textContent : 'Pull complete.';
+                pullInput.value = '';
+                await Promise.all([loadModels(), loadRunning()]);
+            } catch (e) {
+                pullError.textContent = e.message || 'Pull failed';
+            } finally {
+                pulling = false;
+                pullBtn.classList.remove('busy-btn');
+            }
+        }
+
+        pullBtn.addEventListener('click', pullModel);
+        pullInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); pullModel(); }
+        });
+        document.getElementById('refresh-btn').addEventListener('click', () => { loadModels(); loadRunning(); });
+
+        async function loadUserInfo() {
+            try {
+                let response = await fetch(`${API_BASE}/auth/me`, { headers: authHeaders() });
+                if (response.status === 401) {
+                    try { await refreshToken(); response = await fetch(`${API_BASE}/auth/me`, { headers: authHeaders() }); }
+                    catch (e) { return promptLogin(); }
+                }
+                if (response.ok) {
+                    const userInfo = await response.json();
+                    document.getElementById('username-display').textContent = userInfo.username;
+                    if (userInfo.theme) {
+                        applyTheme(userInfo.theme);
+                        localStorage.setItem('theme', userInfo.theme);
+                    }
+                    if ((userInfo.roles || []).includes('ROLE_ADMIN')) {
+                        isAdmin = true;
+                        document.getElementById('admin-content').style.display = '';
+                        loadModels();
+                        loadRunning();
+                    } else {
+                        document.getElementById('not-authorized').style.display = '';
+                    }
+                } else {
+                    promptLogin();
+                }
+            } catch (e) {
+                console.error('Failed to load user info:', e);
+                promptLogin();
+            }
+        }
+
+        loadUserInfo();
+
+        document.addEventListener('click', (e) => {
+            document.querySelectorAll('details.site-menu[open]').forEach(menu => {
+                if (!menu.contains(e.target)) menu.removeAttribute('open');
+            });
+        });
+    </script>
+</body>
+</html>
