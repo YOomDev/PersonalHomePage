@@ -106,8 +106,8 @@
                     </select>
                 </div>
                 <div class="form-group" id="weather-config-group">
-                    <label for="module-config">Configuration (JSON)</label>
-                    <textarea id="module-config" name="config" rows="6" placeholder='{"location": "Amsterdam", "units": "metric"}'></textarea>
+                    <label for="weather-config">Configuration (JSON)</label>
+                    <textarea id="weather-config" name="config" rows="6" placeholder='{"location": "Amsterdam", "units": "metric"}'></textarea>
                 </div>
                 <div class="form-group" id="ollama-config-group" style="display: none;">
                     <label for="ollama-model">Model</label>
@@ -121,8 +121,8 @@
                     <p class="text-muted" style="font-size: 0.8125rem; margin-top: 0.5rem;">Uses server URL from application.yml. JSON config optional.</p>
                 </div>
                 <div class="form-group" id="ollama-advanced-group" style="display: none;">
-                    <label for="module-config">Advanced Config (JSON, optional)</label>
-                    <textarea id="module-config" name="config" rows="6" placeholder='{"systemPrompt": "You are a helpful assistant.", "temperature": 0.7, "maxTokens": 2000, "timeout": 30000}'></textarea>
+                    <label for="ollama-config">Advanced Config (JSON, optional)</label>
+                    <textarea id="ollama-config" name="config" rows="6" placeholder='{"systemPrompt": "You are a helpful assistant.", "temperature": 0.7, "maxTokens": 2000, "timeout": 120000}'></textarea>
                 </div>
                 <div class="form-row">
                     <div class="form-group">
@@ -282,12 +282,11 @@
                     delete advancedConfig.model;
                     delete advancedConfig.stream;
                     delete advancedConfig.baseUrl;
-                    if (Object.keys(advancedConfig).length > 0) {
-                        document.getElementById('module-config').value = JSON.stringify(advancedConfig, null, 2);
-                    }
+                    document.getElementById('ollama-config').value =
+                        Object.keys(advancedConfig).length > 0 ? JSON.stringify(advancedConfig, null, 2) : '';
                 });
             } else {
-                document.getElementById('module-config').value = JSON.stringify(module.config, null, 2);
+                document.getElementById('weather-config').value = JSON.stringify(module.config, null, 2);
             }
             
             document.getElementById('module-enabled').value = module.enabled;
@@ -369,7 +368,7 @@
                 };
 
                 // Parse advanced config if provided
-                const advancedConfigText = document.getElementById('module-config').value.trim();
+                const advancedConfigText = document.getElementById('ollama-config').value.trim();
                 if (advancedConfigText) {
                     try {
                         const advanced = JSON.parse(advancedConfigText);
@@ -383,7 +382,7 @@
                 config = {};
             } else {
                 try {
-                    config = JSON.parse(document.getElementById('module-config').value);
+                    config = JSON.parse(document.getElementById('weather-config').value);
                 } catch (e) {
                     alert('Invalid JSON configuration');
                     return;
